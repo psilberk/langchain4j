@@ -61,4 +61,10 @@ public class IsNotIn implements Filter {
 
         return !comparisonValues.contains(actualValue);
     }
+
+    @Override
+    public String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        String key = formatter.formatKeyAsString(key());
+        return String.format(formatter.isNotInExpression(), key, formatter.formatValuesAsString(comparisonValues()));
+    }
 }

@@ -1,6 +1,7 @@
 package dev.langchain4j.store.embedding.filter.logical;
 
 import dev.langchain4j.store.embedding.filter.Filter;
+import dev.langchain4j.store.embedding.filter.comparison.JsonPathQueryFormatter;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
@@ -29,5 +30,10 @@ public class And implements Filter {
     @Override
     public boolean test(Object object) {
         return left().test(object) && right().test(object);
+    }
+
+    @Override
+    public String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        return String.format(formatter.andOperator(), left().toJSONPath(formatter), right().toJSONPath(formatter));
     }
 }

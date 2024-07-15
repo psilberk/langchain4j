@@ -56,4 +56,10 @@ public class IsNotEqualTo implements Filter {
 
         return !actualValue.equals(comparisonValue);
     }
+
+    @Override
+    public String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        String key = formatter.formatKey(key(), comparisonValue().getClass());
+        return String.format(formatter.isNotEqualToExpression(), key, formatter.formatValue(comparisonValue()));
+    }
 }

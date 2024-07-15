@@ -61,4 +61,9 @@ public class IsIn implements Filter {
 
         return comparisonValues.contains(actualValue);
     }
+
+    @Override
+    public String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        return String.format(formatter.isInExpression(), formatter.formatKeyAsString(key()), formatter.formatValuesAsString(comparisonValues()));
+    }
 }

@@ -50,4 +50,9 @@ public class IsLessThanOrEqualTo implements Filter {
 
         return ((Comparable) actualValue).compareTo(comparisonValue) <= 0;
     }
+
+    @Override
+    public String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        return String.format(formatter.isLessThanOrEqualToExpression(), formatter.formatKey(key(), comparisonValue().getClass()), formatter.formatValue(comparisonValue()));
+    }
 }

@@ -59,4 +59,8 @@ public interface Filter {
     static Filter not(Filter expression) {
         return new Not(expression);
     }
+
+    default String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        throw new UnsupportedOperationException();
+    };
 }

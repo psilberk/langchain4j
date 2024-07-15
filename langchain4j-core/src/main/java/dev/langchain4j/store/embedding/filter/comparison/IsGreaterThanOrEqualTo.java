@@ -49,5 +49,11 @@ public class IsGreaterThanOrEqualTo implements Filter {
         }
 
         return ((Comparable) actualValue).compareTo(comparisonValue) >= 0;
+
+    }
+
+    @Override
+    public String toJSONPath(JsonPathQueryFormatter formatter) throws Exception {
+        return String.format(formatter.isGreatherThanOrEqualToExpression(), formatter.formatKey(key(), comparisonValue.getClass()), formatter.formatValue(comparisonValue()));
     }
 }
