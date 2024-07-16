@@ -284,8 +284,8 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             // This defineColumnType call lets Oracle JDBC know that it is about to query a VECTOR column. This
             // avoids an extra network request in which Oracle JDBC would have to send a VECTOR prefetch size before
             // fetching row data. Using a 524,308 byte prefetch, which is the same as what Oracle JDBC uses internally.
-            searchStatement.unwrap(OracleStatement.class)
-                    .defineColumnType(4, OracleTypes.VECTOR_FLOAT32, 524308);
+//            searchStatement.unwrap(OracleStatement.class)
+//                    .defineColumnType(4, OracleTypes.VECTOR, 524308);
 
             searchStatement.setFetchSize(maxResults);
             searchStatement.setObject(1, requestEmbedding.vector(), OracleTypes.VECTOR_FLOAT32);
@@ -361,7 +361,8 @@ public class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
 
                 if (segments != null && segments.get(i) != null) {
                     TextSegment textSegment = segments.get(i);
-                    upsertStatement.setString(2, textSegment.text());
+                    //upsertStatement.setString(2, textSegment.text());
+                    upsertStatement.setObject (2, textSegment.text());
                     OracleJsonObject ojson = dataAdapter.toJSON(textSegment.metadata().toMap());
                     upsertStatement.setObject(3, ojson, OracleTypes.JSON);
                 } else {

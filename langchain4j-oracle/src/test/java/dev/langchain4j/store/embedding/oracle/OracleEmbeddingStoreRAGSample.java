@@ -1,6 +1,8 @@
 package dev.langchain4j.store.embedding.oracle;
 
-import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.document.loader.UrlDocumentLoader;
+import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -19,7 +21,11 @@ import oracle.ucp.jdbc.PoolDataSourceFactory;
 import java.sql.SQLException;
 import java.util.List;
 
-public class OracleEmbeddingStoreSample {
+
+interface Assistant {
+    String chat(String userMessage);
+}
+public class OracleEmbeddingStoreRAGSample {
 
     public static void main(String[] args) throws SQLException {
 
@@ -40,62 +46,22 @@ public class OracleEmbeddingStoreSample {
             .normalizeVectors(true)
             .build();
 
+        // Add documents
+        Document document = UrlDocumentLoader.load("https://en.wikipedia.org/wiki/2022_FIFA_World_Cup_squads", new TextDocumentParser());
         EmbeddingModel embeddingModel = new AllMiniLmL6V2QuantizedEmbeddingModel();
-
-        TextSegment mateText = TextSegment.from("Mate is a hot beverage, like tea");
-        Embedding mate = embeddingModel
-            .embed(mateText)
+        Embedding embedding = embeddingModel
+            .embed(document.toTextSegment())
             .content();
-        store.add(mate, mateText);
+        store.add(embedding, document.toTextSegment());
 
-        TextSegment argentinaText = TextSegment.from("Mate is very popular in Argentina");
-        //TextSegment argentinaText = TextSegment.from("Mate is very popular in Argentina. It costs US$ 7.66 for a 1kg bag.");
-        //TextSegment argentinaText = TextSegment.from("Fernet is the most popular beverage in Argentina");
-        Embedding argentina = embeddingModel
-            .embed(argentinaText)
-            .content();
-        store.add(argentina, argentinaText);
-
-        TextSegment textColombia = TextSegment.from("Coffee is very popular in Colombia");
-        Embedding colombia = embeddingModel
-            .embed(textColombia)
-            .content();
-        store.add(colombia, textColombia);
-
-        Embedding query = embeddingModel
-            .embed(TextSegment.from("What is the preferred hot beverage in Colombia?"))
-            .content();
-
-        // Using the EmbeddingStore for similarity search
-        EmbeddingSearchResult<TextSegment> result = store.search(
-            EmbeddingSearchRequest
-                .builder()
-                .queryEmbedding(query)
-                //.maxResults(5) TODO, possible bug when results > rows
-                .maxResults(1)
-                .build());
-
-        List<EmbeddingMatch<TextSegment>> matches = result.matches();
-        for (EmbeddingMatch<TextSegment> match : matches) {
-            System.out.println(match.embedded().text());
-        }
-
-        // Using the EmbeddingStore in a chain
+        // Create the Chain
         Assistant assistant = AiServices.builder(Assistant.class)
             .chatLanguageModel(OpenAiChatModel.withApiKey("sk-proj-JdH2IS27YNW2PsnLjiMLT3BlbkFJtrvO7tOoD9OagdsFr7GH"))
-            //.tools(new Calculator())
             .chatMemory(MessageWindowChatMemory.withMaxMessages(1))
             .contentRetriever(EmbeddingStoreContentRetriever.from(store))
             .build();
 
-        String answer = assistant.chat("What is the most popular beverage in Argentina? And how much does it cost in pesos and dollars?");
+        String answer = assistant.chat("What were the players that won the 2022 Soccer World Cup?");
         System.out.println(answer);
-    }
-}
-
-class Calculator {
-    @Tool
-    public int convertToPesos(int dollarAmount) {
-        return dollarAmount * 1500;
     }
 }
