@@ -82,7 +82,7 @@ public class OracleEmbeddingStoreSample {
 
         // Using the EmbeddingStore in a chain
         Assistant assistant = AiServices.builder(Assistant.class)
-            .chatLanguageModel(OpenAiChatModel.withApiKey("sk-proj-JdH2IS27YNW2PsnLjiMLT3BlbkFJtrvO7tOoD9OagdsFr7GH"))
+            .chatLanguageModel(OpenAiChatModel.withApiKey("APIKEY"))
             //.tools(new Calculator())
             .chatMemory(MessageWindowChatMemory.withMaxMessages(1))
             .contentRetriever(EmbeddingStoreContentRetriever.from(store))
