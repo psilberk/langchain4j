@@ -56,7 +56,7 @@ public class OracleEmbeddingStoreRAGSample {
 
         // Create the Chain
         Assistant assistant = AiServices.builder(Assistant.class)
-            .chatLanguageModel(OpenAiChatModel.withApiKey("sk-proj-JdH2IS27YNW2PsnLjiMLT3BlbkFJtrvO7tOoD9OagdsFr7GH"))
+            .chatLanguageModel(OpenAiChatModel.withApiKey("APIKEY"))
             .chatMemory(MessageWindowChatMemory.withMaxMessages(1))
             .contentRetriever(EmbeddingStoreContentRetriever.from(store))
             .build();
