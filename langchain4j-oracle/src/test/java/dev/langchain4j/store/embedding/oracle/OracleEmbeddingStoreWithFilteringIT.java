@@ -6,26 +6,26 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.EmbeddingStoreWithFilteringIT;
 import oracle.jdbc.datasource.OracleDataSource;
+import org.junit.jupiter.api.BeforeAll;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.oracle.OracleContainer;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
 
-//@Testcontainers
+@Testcontainers
 public class OracleEmbeddingStoreWithFilteringIT extends EmbeddingStoreWithFilteringIT {
 
-
-    /*
     @Container
-    static OracleContainer ORACLE_CONTAINER = new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart");
-
-     */
+    private static final OracleContainer ORACLE_CONTAINER =
+            new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart");
 
     private static final OracleEmbeddingStore EMBEDDING_STORE =
             OracleEmbeddingStore.builder()
                 .tableName("oracle_embedding_store_with_filtering_it")
-                .dataSource(CommonTestOperations.getDataSource())
+                .dataSource(CommonTestOperations.getDataSource(ORACLE_CONTAINER))
                 .build();
-
 
     @Override
     protected EmbeddingStore<TextSegment> embeddingStore() {

@@ -1,7 +1,11 @@
 package dev.langchain4j.store.embedding.oracle;
 
+import dev.langchain4j.store.embedding.filter.logical.Or;
 import oracle.jdbc.OracleConnection;
 import oracle.jdbc.OracleConnectionWrapper;
+import oracle.jdbc.datasource.OracleDataSource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.oracle.OracleContainer;
 
 import javax.sql.DataSource;
 import java.io.PrintWriter;
@@ -20,8 +24,6 @@ import java.util.logging.Logger;
  * guidelines listed in the CONTRIBUTING.md document.
  */
 public class TestDataSource implements DataSource {
-
-    // static OracleContainer ORACLE_CONTAINER = new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart");
 
     private final DataSource dataSource;
 

@@ -3,6 +3,8 @@ package dev.langchain4j.store.embedding.oracle;
 import dev.langchain4j.model.embedding.AllMiniLmL6V2QuantizedEmbeddingModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import oracle.jdbc.datasource.OracleDataSource;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.oracle.OracleContainer;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
@@ -20,28 +22,28 @@ final class CommonTestOperations {
 
     private CommonTestOperations() {}
 
-    private static final DataSource DATA_SOURCE;
-    static {
-        try {
-            OracleDataSource oracleDataSource = new oracle.jdbc.datasource.impl.OracleDataSource();
-            oracleDataSource.setURL("jdbc:oracle:thin:@test");
-            oracleDataSource.setUser("test");
-            oracleDataSource.setPassword("test");
-            DATA_SOURCE = new TestDataSource(oracleDataSource);
-        } catch (
-                SQLException sqlException) {
-            throw new AssertionError(sqlException);
-        }
-    }
+    private static DataSource dataSource;
 
     static EmbeddingModel getEmbeddingModel() {
         return EMBEDDING_MODEL;
     }
 
-    static DataSource getDataSource() {
-        return DATA_SOURCE;
+    static DataSource getDataSource(OracleContainer oracleContainer) {
+        if (dataSource == null) {
+            try {
+                oracleContainer.start();
+                OracleDataSource oracleDataSource = new oracle.jdbc.datasource.impl.OracleDataSource();
+                oracleDataSource.setUser(oracleContainer.getJdbcUrl());
+                oracleDataSource.setUser(oracleContainer.getUsername());
+                oracleDataSource.setPassword(oracleContainer.getPassword());
+                dataSource = new TestDataSource(oracleDataSource);
+            }
+            catch (SQLException sqlException) {
+                throw new IllegalStateException(sqlException);
+            }
+        }
+
+        return dataSource;
     }
-
-
 
 }
