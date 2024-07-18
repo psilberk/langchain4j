@@ -4,15 +4,14 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.EmbeddingStoreWithRemovalIT;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.oracle.OracleContainer;
 
-@Testcontainers
 public class OracleEmbeddingStoreWithRemovalIT extends EmbeddingStoreWithRemovalIT {
 
-    @Container
     private static final OracleContainer ORACLE_CONTAINER =
             new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart");
 
@@ -21,6 +20,11 @@ public class OracleEmbeddingStoreWithRemovalIT extends EmbeddingStoreWithRemoval
                     .tableName("oracle_embedding_store_with_removal_it")
                     .dataSource(CommonTestOperations.getDataSource(ORACLE_CONTAINER))
                     .build();
+
+    @AfterAll
+    public static void shutDownContainer() {
+        ORACLE_CONTAINER.stop();
+    }
 
     @BeforeEach
     public void clearTable() {

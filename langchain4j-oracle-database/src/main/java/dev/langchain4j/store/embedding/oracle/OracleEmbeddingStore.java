@@ -44,7 +44,10 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  * </p><p>
  * If it does not already exist, the named table will created when {@link Builder#build()} is called. The table columns
  * are listed below.
- * <table><tr>
+ * </p>
+ * <table>
+ * <caption>Table Columns</caption>
+ * <tr>
  *    <th>Name</th>
  *    <th>Type</th>
  *    <th>Description</th>
@@ -80,7 +83,7 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  *         are called.
  *     </td>
  * </tr></table>
- * </p><p>
+ * <p>
  * An inverted flat file (IVF) vector index is created on the embedding column. The index is named
  * "{tableName}_vector_index", where {tableName} is the name configured using the {@link Builder}.
  * </p><p>
