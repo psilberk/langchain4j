@@ -3,10 +3,7 @@ package dev.langchain4j.store.embedding.oracle;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
-import dev.langchain4j.store.embedding.EmbeddingSearchResult;
-import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.*;
 import dev.langchain4j.store.embedding.filter.Filter;
 import oracle.jdbc.OracleStatement;
 import oracle.jdbc.OracleType;
@@ -71,7 +68,7 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  *         Never stores NULL.
  *     </td>
  *     </tr><tr>
- *     <td>content</td>
+ *     <td>text</td>
  *     <td>CLOB</td>
  *     <td>
  *         Stores the {@link TextSegment#text()} passed to {@link #add(Embedding, TextSegment)} and
@@ -89,7 +86,7 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  * </tr></table>
  * <p>
  * An inverted flat file (IVF) vector index is created on the embedding column. The index is named
- * "{tableName}_embedding_index", where {tableName} is the name configured using the {@link Builder}.
+ * "{tableName}_vector_index", where {tableName} is the name configured using the {@link Builder}.
  * </p><p>
  * All methods of this embedding store will throw an {@link IllegalStateException} with a {@link SQLException} as its
  * {@link IllegalStateException#getCause()} when a database operation results in an error.
@@ -97,18 +94,23 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  */
 public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
 
-    /**
-     * The mapping function for use with {@link SQLFilters#create(Filter, UnaryOperator)}. The function maps a
-     * {@link Metadata} key to a field of the JSON "metadata" column. The builtin JSON_VALUE function is used to
-     * evaluate a JSON path expression.
-     */
-    private static final UnaryOperator<String> METADATA_KEY_MAPPER = key -> "JSON_VALUE(metadata, '$." + key + "')";
-
     /** DataSource configured to connect with an Oracle Database. */
     private final DataSource dataSource;
 
     /** Name of a database table accessed by this embedding store */
     private final String tableName;
+
+    /** Name of a column which stores an id. */
+    private final String idColumn;
+
+    /** Name of a column which stores an embedding. */
+    private final String embeddingColumn;
+
+    /** Name of a column which stores text. */
+    private final String textColumn;
+
+    /** Name of a column which stores metadata. */
+    private final String metadataColumn;
 
     /** Distance metric used for similarity searches */
     private final DistanceMetric distanceMetric;
@@ -120,6 +122,13 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final boolean isExactSearch;
 
     /**
+     * The mapping function for use with {@link SQLFilters#create(Filter, UnaryOperator)}. The function maps a
+     * {@link Metadata} key to a field of the JSON "metadata" column. The builtin JSON_VALUE function is used to
+     * evaluate a JSON path expression.
+     */
+    private final UnaryOperator<String> metadataKeyMapper;
+
+    /**
      * Constructs embedding store configured by a builder.
      *
      * @param builder Builder that configures the emebedding store. Not null.
@@ -127,78 +136,15 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      * @throws IllegalArgumentException If the configuration is not valid.
      */
     private OracleEmbeddingStore(Builder builder) {
-        this.dataSource = builder.dataSource;
-        this.tableName = builder.tableName;
-        this.distanceMetric = builder.distanceMetric;
-        this.isExactSearch = builder.isExactSearch;
-
-        createSchema(builder);
-    }
-
-    /**
-     * <p>
-     * Creates database tables, indexes, and any other schema objects needed to store embeddings. Any existing schema
-     * objects are reused.
-     * </p><p>
-     * The table uses a VARCHAR(36) column as a primary key. This data type is chosen for consistency with other
-     * embedding store implementations which accept {@link UUID#toString()} as an id.
-     * </p><p>
-     * Embeddings are stored as VECTOR having any length of FLOAT32 dimensions. The FLOAT32 type can store any number
-     * represented in the <code>float[]</code> returned by {@link Embedding#vector()}. A NOT NULL constraint conforms
-     * with the behavior other embedding store implementations which do not accept NULL embeddings for "add" operations.
-     * </p><p>
-     * The text is stored as CLOB, allowing text of any length to be stored (versus VARCHAR which is limited to 32k
-     * characters). A string returned by {@link TextSegment#text()} can be up to 2G characters.
-     * </p><p>
-     * The metadata is stored as JSON. The unstructured JSON type can store the unstructured metadata returned by
-     * {@link TextSegment#metadata()}.
-     * </p><p>
-     * A vector index is created on the embedding column to speed up similarity search queries. The vector
-     * index uses a cosine distance, which is the same metric used by the {@link #search(EmbeddingSearchRequest)}
-     * method.
-     * </p><p>
-     * The vector index type is an inverted flat file (IVF), rather than hierarchical navigable small world (HNSW),
-     * because DML operations are not possible after creating an HNSW index. Methods like {@link #add(Embedding)}
-     * require the use of DML operations.
-     * </p><p>
-     * There are many parameters which can tune the index, but none are set for now. Later work may tune the index for
-     * operations of a an embedding store.
-     * </p><p>
-     * The vector index uses a cosine distance.
-     * </p>
-     *
-     * @param builder Builder configured to create an OracleEmbeddingStore. Not null.
-     *
-     * @throws IllegalStateException If connection to the database fails, or an error occurs when creating the schema
-     * objects.
-     */
-    private static void createSchema(Builder builder) {
-        try (Connection connection = builder.dataSource.getConnection();
-             Statement statement = connection.createStatement()
-        ) {
-            String tableName = builder.tableName;
-
-            statement.addBatch("CREATE TABLE IF NOT EXISTS " + tableName
-                    + "(id VARCHAR(36) NOT NULL,"
-                    + " embedding VECTOR(*, FLOAT32) NOT NULL,"
-                    + " content CLOB,"
-                    + " metadata JSON,"
-                    + " PRIMARY KEY (id))");
-
-            // In 23.4, the database will only use a vector index for approximate search. This may change in a later
-            // release.
-            if (!builder.isExactSearch) {
-                statement.addBatch("CREATE VECTOR INDEX IF NOT EXISTS " + tableName + "_embedding_index" +
-                        " ON " + tableName + "(embedding)" +
-                        " ORGANIZATION NEIGHBOR PARTITIONS" +
-                        " WITH DISTANCE " + builder.distanceMetric.name());
-            }
-
-            statement.executeBatch();
-        }
-        catch (SQLException sqlException) {
-            throw uncheckSQLException(sqlException);
-        }
+        dataSource = ensureNotNull(builder.dataSource, "dataSource");
+        tableName = ensureNotNull(builder.tableName, "tableName");
+        idColumn = ensureNotNull(builder.idColumn, "idColumn");
+        embeddingColumn = ensureNotNull(builder.embeddingColumn, "embeddingColumn");
+        textColumn = ensureNotNull(builder.textColumn, "textColumn");
+        metadataColumn = ensureNotNull(builder.metadataColumn, "metadataColumn");
+        distanceMetric = ensureNotNull(builder.distanceMetric, "distanceMetric");
+        isExactSearch = ensureNotNull(builder.isExactSearch, "isExactSearch");
+        metadataKeyMapper = key -> "JSON_VALUE(" + metadataColumn + ", '$." + key + "')";
 
     }
 
@@ -216,7 +162,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         String[] ids = new String[embeddings.size()];
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insert = connection.prepareStatement(
-                     "INSERT INTO " + tableName + "(id, embedding) VALUES (?, ?)")
+                     "INSERT INTO " + tableName + "(" + idColumn + ", " + embeddingColumn + ") VALUES (?, ?)")
         ) {
            for (int i = 0; i < embeddings.size(); i++) {
                String id = randomUUID();
@@ -261,7 +207,9 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insert = connection.prepareStatement(
-                     "INSERT INTO " + tableName + "(id, embedding, content, metadata) VALUES (?, ?, ?, ?)")
+                     "INSERT INTO " + tableName + "(" +
+                             idColumn + ", " + embeddingColumn + ",  " + textColumn + ", " + metadataColumn +
+                             ") VALUES (?, ?, ?, ?)")
         ) {
 
             for (int i = 0; i < embeddings.size(); i++) {
@@ -294,11 +242,13 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         // implementations.
         try (Connection connection = dataSource.getConnection();
              PreparedStatement merge = connection.prepareStatement(
-                     "MERGE INTO " + tableName + " existing"
-                             + " USING (SELECT ? as id, ? as embedding) new"
-                             + " ON (new.id = existing.id)"
-                             + " WHEN MATCHED THEN UPDATE SET existing.embedding = new.embedding"
-                             + " WHEN NOT MATCHED THEN INSERT (id, embedding) VALUES (new.id, new.embedding)");
+                     "MERGE INTO " + tableName + " existing" +
+                             " USING (SELECT ? as id, ? as embedding) new" +
+                             " ON (new.id = existing." + idColumn + ")" +
+                             " WHEN MATCHED THEN UPDATE SET existing." + embeddingColumn + " = new.embedding" +
+                             " WHEN NOT MATCHED THEN INSERT (" +
+                             idColumn + ", " + embeddingColumn +
+                             ") VALUES (new.id, new.embedding)");
         ) {
             merge.setString(1, id);
             merge.setObject(2, embedding.vector(), OracleType.VECTOR_FLOAT32);
@@ -315,7 +265,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement delete = connection.prepareStatement(
-                     "DELETE FROM " + tableName + " WHERE id = ?")
+                     "DELETE FROM " + tableName + " WHERE " + idColumn + " = ?")
         ) {
             for (String id : ids) {
                 ensureNotNull(id, "id");
@@ -333,7 +283,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     public void removeAll(Filter filter) {
         ensureNotNull(filter, "filter");
 
-        SQLFilter sqlFilter = SQLFilters.create(filter, METADATA_KEY_MAPPER);
+        SQLFilter sqlFilter = SQLFilters.create(filter, metadataKeyMapper);
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement delete = connection.prepareStatement(
@@ -362,7 +312,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     public EmbeddingSearchResult<TextSegment> search(EmbeddingSearchRequest request) {
         ensureNotNull(request, "request");
 
-        SQLFilter sqlFilter = SQLFilters.create(request.filter(), METADATA_KEY_MAPPER);
+        SQLFilter sqlFilter = SQLFilters.create(request.filter(), metadataKeyMapper);
         final int maxResults = request.maxResults();
 
         // In a 23.4 build of Oracle Database, ORA-06553 will result if the distance column is referenced in the WHERE
@@ -371,13 +321,12 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         // performance improvement.
         try (Connection connection = dataSource.getConnection();
              PreparedStatement query = connection.prepareStatement(
-                     "SELECT VECTOR_DISTANCE(embedding, ?, " + distanceMetric.name() + ")" +
-                             " distance, id, embedding, content, metadata" +
-                             " FROM " + tableName +
-                             sqlFilter.asWhereClause() +
-                             " ORDER BY distance" +
-                             " FETCH" + (isExactSearch ? "" : " APPROXIMATE") +
-                             " FIRST " + maxResults + " ROWS ONLY")
+                     "SELECT VECTOR_DISTANCE(" + embeddingColumn + ", ?, " + distanceMetric.name() + ") distance, " +
+                             idColumn + ", " + embeddingColumn + ", " + textColumn + ", " + metadataColumn +
+                         " FROM " + tableName +
+                         sqlFilter.asWhereClause() +
+                         " ORDER BY distance" +
+                         " FETCH FIRST " + maxResults + " ROWS ONLY")
         ) {
             query.setObject(1, request.queryEmbedding().vector(), OracleTypes.VECTOR_FLOAT32);
             sqlFilter.setParameters(query, 2);
@@ -391,7 +340,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             OracleStatement oracleStatement = query.unwrap(OracleStatement.class);
             oracleStatement.defineColumnType(1, OracleTypes.BINARY_DOUBLE);
             oracleStatement.defineColumnType(2, OracleTypes.VARCHAR);
-            oracleStatement.defineColumnType(3, OracleTypes.VECTOR_FLOAT32, 524308); // <-- Max vector size, in bytes
+            oracleStatement.defineColumnType(3, OracleTypes.VECTOR_FLOAT32, 524308);
             oracleStatement.defineColumnType(4, OracleTypes.CLOB, Integer.MAX_VALUE);
             oracleStatement.defineColumnType(5, OracleTypes.JSON, Integer.MAX_VALUE);
 
@@ -406,10 +355,10 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                     if (score < request.minScore())
                         break; // Break, because results are ordered by ascending distances.
 
-                    String id = resultSet.getString("id");
-                    float[] embedding = resultSet.getObject("embedding", float[].class);
-                    String content = resultSet.getString("content");
-                    OracleJsonObject metadata = resultSet.getObject("metadata", OracleJsonObject.class);
+                    String id = resultSet.getString(idColumn);
+                    float[] embedding = resultSet.getObject(embeddingColumn, float[].class);
+                    String content = resultSet.getString(textColumn);
+                    OracleJsonObject metadata = resultSet.getObject(metadataColumn, OracleJsonObject.class);
 
                     EmbeddingMatch<TextSegment> match = new EmbeddingMatch<>(
                             score,
@@ -529,33 +478,11 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     /**
      * Returns a runtime exception which conveys the same information as a given SQLException. Methods which can not
      * throw a checked exception use this method to convert it into an unchecked exception.
-     *
-     * @param sqlException Exception thrown from the JDBC API. Not null.
-     *
-     * @return Unchecked exception to throw from the EmbeddingStore API. Not null.
+     * @param sqlException
+     * @return
      */
     private static RuntimeException uncheckSQLException(SQLException sqlException) {
-        return sqlException instanceof BatchUpdateException
-            ? uncheckSQLException((BatchUpdateException) sqlException)
-            : new IllegalStateException(sqlException);
-    }
-
-    /**
-     * Returns a runtime exception which conveys the same information as a given BatchUpdateException. Methods which can
-     * not throw a checked exception use this method to convert it into an unchecked exception. This is a specialized
-     * form of {@link #uncheckSQLException(SQLException)} which extracts the first failure from
-     * {@link BatchUpdateException#getNextException()}. This getNextException method returns more specific information,
-     * which can help users debug. Future work on this method can handle cases where JDBC is configured to
-     * {@linkplain oracle.jdbc.OracleConnection#CONNECTION_PROPERTY_CONTINUE_BATCH_ON_ERROR continue batches on error}
-     * and can use {@link BatchUpdateException#getUpdateCounts()} to identify specific records that cause a failure.
-     *
-     * @param batchUpdateException Exception thrown from {@link PreparedStatement#executeBatch()}. Not null.
-     *
-     * @return Unchecked exception to throw from the EmbeddingStore API. Not null.
-     */
-    private static RuntimeException uncheckSQLException(BatchUpdateException batchUpdateException) {
-        SQLException firstFailure = batchUpdateException.getNextException();
-        return new IllegalStateException(firstFailure == null ? batchUpdateException : firstFailure);
+        return new IllegalStateException(sqlException);
     }
 
     /**
@@ -597,39 +524,110 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      */
     public static class Builder {
 
-        // All fields are specified by method-level JavaDocs
-
         private DataSource dataSource;
 
         private String tableName;
+
+        private String idColumn = "id";
+
+        private String embeddingColumn = "embedding";
+
+        private String textColumn = "text";
+
+        private String metadataColumn = "metadata";
 
         private DistanceMetric distanceMetric = DistanceMetric.COSINE;
 
         private boolean isExactSearch = false;
 
-        private Builder() {}
+        private boolean createTable = false;
+
+        private boolean createIndex = false;
+
+        private IndexType indexType = IndexType.IVF;
+
+        private int targetAccuracy = -1;
+
+        private int degreeOfParallelism = -1;
+
+        // HNSW Specific Parameters
+        private int neighbors = -1;
+
+        private int efConstruction = -1;
+
+        // IVF Specific Parameters
+        private int neighborPartitions = -1;
+
+        private int samplePerPartition = -1;
+
+        private int minVectorsPerPartition = -1;
+
+        private Builder() {
+        }
 
         /**
          * Configures a data source that connects to an Oracle Database.
          *
          * @param dataSource Data source to configure. Not null.
-         *
          * @return This builder. Not null.
          */
         public Builder dataSource(DataSource dataSource) {
-            this.dataSource = ensureNotNull(dataSource, "dataSource");
+            this.dataSource = dataSource;
             return this;
         }
 
         /**
-         * Configures the name of an Oracle Database table where embeddings are stored and retrieved from.
+         * Configures the name of a table where embeddings are stored and retrieved from.
          *
          * @param tableName Name of database table. Not null.
-         *
          * @return This builder. Not null.
          */
         public Builder tableName(String tableName) {
-            this.tableName = ensureNotNull(tableName, "tableName");
+            this.tableName = tableName;
+            return this;
+        }
+
+        /**
+         * Configures the name of a column which stores an id. The default name is "id".
+         *
+         * @param idColumn Name of the id column. Not null.
+         * @return This builder. Not null.
+         */
+        public Builder idColumn(String idColumn) {
+            this.idColumn = idColumn;
+            return this;
+        }
+
+        /**
+         * Configures the name of a column which stores an embedding. The default name is "embedding".
+         *
+         * @param embeddingColumn Name of the id column. Not null.
+         * @return This builder. Not null.
+         */
+        public Builder embeddingColumn(String embeddingColumn) {
+            this.embeddingColumn = embeddingColumn;
+            return this;
+        }
+
+        /**
+         * Configures the name of a column which stores text. The default name is "text".
+         *
+         * @param textColumn Name of the text column. Not null.
+         * @return This builder. Not null.
+         */
+        public Builder textColumn(String textColumn) {
+            this.textColumn = textColumn;
+            return this;
+        }
+
+        /**
+         * Configures the name of a column which stores metadata. The default name is "metadata".
+         *
+         * @param metadataColumn Name of the metadata column. Not null.
+         * @return This builder. Not null.
+         */
+        public Builder metadataColumn(String metadataColumn) {
+            this.metadataColumn = metadataColumn;
             return this;
         }
 
@@ -669,6 +667,202 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         }
 
         /**
+         * Configures whether the table should be created.
+         *
+         * @param createTable <code>true</code> to create table, otherwise <code>false</code>.
+         * @return This builder.
+         */
+        public Builder createTable(boolean createTable) {
+            this.createTable = createTable;
+            return this;
+        }
+
+        /**
+         * Configures whether an vector index should be created.
+         *
+         * @param createIndex <code>true</code> to create an index, otherwise <code>false</code>.
+         * @return This builder.
+         */
+        public Builder createIndex(boolean createIndex) {
+            this.createIndex = createIndex;
+            return this;
+        }
+
+        /**
+         * Configures the type of index that will be created.
+         *
+         * @param indexType Type of the index. By default, the type of the index is IVF.
+         * @return This builder.
+         */
+        public Builder type(IndexType indexType) {
+            this.indexType = indexType;
+            return this;
+        }
+
+        /**
+         * Configures the target accuracy.
+         *
+         * @param targetAccuracy Percentage value.
+         * @return This builder.
+         * @throws IllegalArgumentException If the target accuracy not between 1 and 100.
+         */
+        public Builder targetAccuracy(int targetAccuracy) throws IllegalArgumentException {
+            if (targetAccuracy <= 0 || targetAccuracy > 100) {
+                throw new IllegalArgumentException("The target accuracy must be a value between 1 and 100.");
+            }
+            this.targetAccuracy = targetAccuracy;
+            return this;
+        }
+
+        /**
+         * Configures the number of neighbors.
+         * <p>
+         * This is a HNSW Specific Parameters. It represent the maximum number of neighbors a vector
+         * can have on any layer. The last vertex has one additional flexibility that it can have up
+         * to 2M neighbors.
+         * </p>
+         * <p>
+         * <em>Note:</em> this parameters can only be set on HNSW index and the default index type is
+         * IVF. Make sure to set the indexType to HNSW before setting this parameter.
+         * </p>
+         *
+         * @param neighbors The maximum number of neighbors. This parameter accepts values between 1 and
+         *                  2048. By default, this vector index parameter will not be set.
+         * @return This builder.
+         * @throws IllegalArgumentException If the number of neighbors is not between 1 and 2048, or if
+         *                                  the vector type is not HNSW.
+         */
+        public Builder neighbors(int neighbors) throws IllegalArgumentException {
+            if (neighbors <= 0 || neighbors > 2048) {
+                throw new IllegalArgumentException("The maximum number of neighbors a vector can have " +
+                    "on any layer on a HNSW index must be between 1 and 2048.");
+            }
+            if (this.indexType != IndexType.HNSW) {
+                throw new IllegalArgumentException("This parameter can only be set on an index of type HNSW.");
+            }
+            this.neighbors = neighbors;
+            return this;
+        }
+
+        /**
+         * Configures the EFCONSTRUCTION parameter.
+         * <p>
+         * This is a HNSW Specific Parameters. It represent the maximum number of closest vector
+         * candidates considered at each step of the search during insertion.
+         * </p>
+         * <p>
+         * <em>Note:</em> this parameters can only be set on HNSW index and the default index type is
+         * IVF. Make sure to set the indexType to HNSW before setting this parameter.
+         * </p>
+         *
+         * @param efConstruction The maximum number of closest vector candidates considered at each step
+         *                       of the search during insertion.
+         * @return This builder.
+         * @throws IllegalArgumentException If EFCONSTRUCTION is not between 1 and 65535, or if the
+         *                                  vector type is not HNSW.
+         */
+        public Builder efConstruction(int efConstruction) throws IllegalArgumentException {
+            if (efConstruction < 1 || efConstruction > 65535) {
+                throw new IllegalArgumentException("EFCONSTRUCTION should be value between 1 and 65535.");
+            }
+            if (this.indexType != IndexType.HNSW) {
+                throw new IllegalArgumentException("This parameter can only be set on an index of type HNSW.");
+            }
+            this.efConstruction = efConstruction;
+            return this;
+        }
+
+        /**
+         * Configures the number of neighbor partitions.
+         * <p>
+         * This is a IVF Specific Parameters. It  determines the number of centroid partitions that are
+         * created by the index.
+         * </p>
+         *
+         * @param neighborPartitions The number of neighbor partitions.
+         * @return This builder.
+         * @throws IllegalArgumentException If the number of neighbor partitions is not between 1 and
+         *                                  10000000, or if the vector type is not IVF.
+         */
+        public Builder neighborPartitions(int neighborPartitions) throws IllegalArgumentException {
+            if (neighborPartitions < 1 || neighborPartitions > 10000000) {
+                throw new IllegalArgumentException("The maximum number of centroid partitions that are " +
+                    "created by the IVF index cannot be lower than 1 or higher than 10000000.");
+            }
+            if (this.indexType != IndexType.IVF) {
+                throw new IllegalArgumentException("This parameter can only be set on an index of type IVF.");
+            }
+            this.neighborPartitions = neighborPartitions;
+            return this;
+        }
+
+        /**
+         * Configures the total number of vectors that are passed to the clustering algorithm.
+         * <p>
+         * This is a IVF Specific Parameters. It  decides the total number of vectors that are passed to
+         * the clustering algorithm (number of samples per partition times the number of neighbor
+         * partitions).
+         * </p>
+         * <p>
+         * <em>Note,</em> that passing all the vectors would significantly increase the total time to
+         * create the index. Instead, aim to pass a subset of vectors that can capture the data
+         * distribution.
+         * </p>
+         *
+         * @param samplePerPartition The total number of vectors that are passed to the clustering algorithm.
+         * @return This builder.
+         * @throws IllegalArgumentException If the number of samples per partition is lower than 1, or if the
+         *                                  vector type is not IVF.
+         */
+        public Builder samplePerPartition(int samplePerPartition) throws IllegalArgumentException {
+            if (samplePerPartition < 1) {
+                throw new IllegalArgumentException("The maximum number of samples per partition must be 1 or " +
+                    "higher.");
+            }
+            if (this.indexType != IndexType.IVF) {
+                throw new IllegalArgumentException("This parameter can only be set on an index of type IVF.");
+            }
+            this.samplePerPartition = samplePerPartition;
+            return this;
+        }
+
+        /**
+         * Configures the target minimum number of vectors per partition.
+         * <p>
+         * This is a IVF Specific Parameters. It represents the target minimum number of vectors per
+         * partition. Aim to trim out any partition that can end up with fewer than 100 vectors. This
+         * may result in lesser number of centroids. Its values can range from 0 (no trimming of
+         * centroids) to num_vectors (would result in 1 neighbor partition).
+         * </p>
+         *
+         * @param minVectorsPerPartition The target minimum number of vectors per partition.
+         * @return This builder.
+         * @throws IllegalArgumentException If the target minimum number of vectors per partition is lower
+         *                                  than 0, or if the vector type is not IVF.
+         */
+        public Builder minVectorsPerPartition(int minVectorsPerPartition) throws IllegalArgumentException {
+            if (minVectorsPerPartition < 0) {
+                throw new IllegalArgumentException("The minimum number of vectors per partition must be positive.");
+            }
+            if (this.indexType != IndexType.IVF) {
+                throw new IllegalArgumentException("This parameter can only be set on an index of type IVF.");
+            }
+            this.minVectorsPerPartition = minVectorsPerPartition;
+            return this;
+        }
+
+        /**
+         * Configures the degree of parallelism of the index.
+         *
+         * @param degreeOfParallelism The degree of parallelism.
+         * @return This builder.
+         */
+        public Builder degreeOfParallelism(int degreeOfParallelism) {
+            this.degreeOfParallelism = degreeOfParallelism;
+            return this;
+        }
+
+        /**
          * Builds an embedding store with the configuration applied to this builder.
          *
          * @return A new embedding store. Not null.
@@ -677,7 +871,116 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             // Validate that required options have been set
             ensureNotNull(dataSource, "dataSource");
             ensureNotNull(tableName, "tableName");
+            if (createTable || (createIndex && !isExactSearch)) {
+                createSchema();
+            }
             return new OracleEmbeddingStore(this);
         }
+
+        /**
+         * <p>
+         * Creates database tables, indexes, and any other schema objects needed to store embeddings. Any existing schema
+         * objects are reused.
+         * </p><p>
+         * The table uses a VARCHAR(36) column as a primary key. This data type is chosen for consistency with other
+         * embedding store implementations which accept {@link UUID#toString()} as an id.
+         * </p><p>
+         * Embeddings are stored as VECTOR having any length of FLOAT32 dimensions. The FLOAT32 type can store any number
+         * represented in the <code>float[]</code> returned by {@link Embedding#vector()}. A NOT NULL constraint conforms
+         * with the behavior other embedding store implementations which do not accept NULL embeddings for "add" operations.
+         * </p><p>
+         * The text is stored as CLOB, allowing text of any length to be stored (versus VARCHAR which is limited to 32k
+         * characters). A string returned by {@link TextSegment#text()} can be up to 2G characters.
+         * </p><p>
+         * The metadata is stored as JSON. The unstructured JSON type can store the unstructured metadata returned by
+         * {@link TextSegment#metadata()}.
+         * </p><p>
+         * A vector index is created on the embedding column to speed up similarity search queries. The vector
+         * index uses a cosine distance, which is the same metric used by the {@link #search(EmbeddingSearchRequest)}
+         * method.
+         * </p><p>
+         * The vector index type is an inverted flat file (IVF), rather than hierarchical navigable small world (HNSW),
+         * because DML operations are not possible after creating an HNSW index. Methods like {@link #add(Embedding)}
+         * require the use of DML operations.
+         * </p><p>
+         * There are many parameters which can tune the index, but none are set for now. Later work may tune the index for
+         * operations of a an embedding store.
+         * </p><p>
+         * The vector index uses a cosine distance.
+         * </p>
+         *
+         * @param builder Builder configured to create an OracleEmbeddingStore. Not null.
+         * @throws IllegalStateException If connection to the database fails, or an error occurs when creating the schema
+         *                               objects.
+         */
+        private void createSchema() {
+            try (Connection connection = this.dataSource.getConnection();
+                 Statement statement = connection.createStatement()
+            ) {
+                if (this.createTable) {
+                    statement.addBatch("CREATE TABLE " + tableName
+                        + "(" + idColumn + " VARCHAR(36) NOT NULL, "
+                        + embeddingColumn + " VECTOR(*, FLOAT32) NOT NULL, "
+                        + textColumn + " CLOB, "
+                        + metadataColumn + " JSON, "
+                        + "PRIMARY KEY (" + idColumn + "))");
+                }
+
+                if (createIndex && !isExactSearch) {
+                    statement.addBatch(generateCreateStatement());
+                }
+
+                statement.executeBatch();
+            } catch (SQLException sqlException) {
+                throw uncheckSQLException(sqlException);
+            }
+
+        }
+
+        /**
+         * Generates the CREATE VECTOR INDEX statement.
+         *
+         * @return A SQL statement that can be used to create the index.
+         */
+        String generateCreateStatement() {
+            String sqlStatement = "CREATE VECTOR INDEX IF NOT EXISTS " + tableName + "_vector_index " +
+                "ON " + tableName + "( " + embeddingColumn + " ) " +
+                indexType.oragnization +
+                (distanceMetric != null ? " WITH DISTANCE " + distanceMetric.toString() + " " : "") +
+                (targetAccuracy > 0 ? " WITH TARGET ACCURACY " + targetAccuracy + " " : "") +
+                (indexType == IndexType.IVF ? getIVFParameters() : getHNSWParameters()) +
+                (degreeOfParallelism >= 0 ? " PARALLEL " + degreeOfParallelism : "");
+            return sqlStatement;
+        }
+
+        /**
+         * Generates the PARAMETERS clause for a IVF index.
+         *
+         * @return A string containing the PARAMETERS clause of the CREATE VECTOR INDEX statement.
+         */
+        private String getIVFParameters() {
+            if (neighborPartitions == -1 && samplePerPartition == -1 && minVectorsPerPartition == -1) {
+                return " ";
+            }
+            return "PARAMETERS ( TYPE IVF" +
+                (neighborPartitions != -1 ? ", NEIGHBOR PARTITIONS " + neighborPartitions + " " : "") +
+                (samplePerPartition != -1 ? ", SAMPLES_PER_PARTITION " + samplePerPartition + " " : "") +
+                (minVectorsPerPartition != -1 ? ", MIN_VECTORS_PER_PARTITION " + minVectorsPerPartition + " " : "") + ")";
+        }
+
+        /**
+         * Generates the PARAMETERS clause for a HNSW index.
+         *
+         * @return A string containing the PARAMETERS clause of the CREATE VECTOR INDEX statement.
+         */
+        private String getHNSWParameters() {
+            if (neighbors == -1 && efConstruction == -1) {
+                return " ";
+            }
+            return "PARAMETERS ( TYPE HNSW" +
+                (neighbors != -1 ? ", NEIGHBORS " + neighbors : " ") +
+                (efConstruction != -1 ? ", EFCONSTRUCTION " + efConstruction : " ") + ")";
+        }
+
     }
 }

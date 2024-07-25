@@ -4,9 +4,14 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -36,14 +41,18 @@ public class DistanceMetricTest {
         verifyDistanceMetric(distanceMetric, true);
     }
 
-    private void verifyDistanceMetric(DistanceMetric distanceMetric, boolean isExactSearch)  {
+    private void verifyDistanceMetric(DistanceMetric distanceMetric, boolean isExactSearch) {
+
+        String tableName = getClass().getSimpleName() + "_" + distanceMetric.name();
 
         OracleEmbeddingStore oracleEmbeddingStore =
            OracleEmbeddingStore.builder()
+                   .createTable(true)
+                   .createIndex(true)
                    .dataSource(CommonTestOperations.getDataSource())
                    .distanceMetric(distanceMetric)
                    .exactSearch(isExactSearch)
-                   .tableName(getClass().getSimpleName() + "_" + distanceMetric.name())
+                   .tableName(tableName)
                    .build();
         try {
             Random random = new Random(SEED);
@@ -87,6 +96,17 @@ public class DistanceMetricTest {
             // Clean up data
             oracleEmbeddingStore.removeAll();
         }
+
+        try {
+            try (Connection connection = CommonTestOperations.getDataSource().getConnection();
+                 Statement stmt = connection.createStatement()) {
+                stmt.execute("DROP INDEX IF EXISTS " + tableName + "_VECTOR_INDEX");
+                stmt.execute("DROP TABLE IF EXISTS " + tableName);
+            }
+        } catch (SQLException sqlException) {
+            Assertions.fail(sqlException.getMessage());
+        }
+
     }
 
 }
