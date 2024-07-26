@@ -1,5 +1,6 @@
 package dev.langchain4j.store.embedding.oracle;
 
+import dev.langchain4j.store.embedding.oracle.index.*;
 import oracle.sql.json.OracleJsonObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -16,15 +17,15 @@ import java.util.stream.Stream;
 
 public class BuilderParametersIT {
 
-  static final String tableName = "EMBEDDING_STORE";
-  static final String indexName = tableName + "_VECTOR_INDEX";
+  static final String TABLE_NAME = "EMBEDDING_STORE";
+  static final String INDEX_NAME = TABLE_NAME + "_VECTOR_INDEX";
 
   @AfterEach
   public void afterAll() throws Exception{
     try (Connection connection = CommonTestOperations.getDataSource().getConnection();
          Statement stmt = connection.createStatement()) {
-      stmt.execute("DROP INDEX IF EXISTS " + indexName);
-      stmt.execute("DROP TABLE IF EXISTS " + tableName);
+      stmt.execute("DROP INDEX IF EXISTS " + INDEX_NAME);
+      stmt.execute("DROP TABLE IF EXISTS " + TABLE_NAME);
     }
   }
 
@@ -42,25 +43,37 @@ public class BuilderParametersIT {
       /// HNSW Parameters
       int efConstruction,
       int neighbors) throws Exception {
-    OracleEmbeddingStore.Builder vectorIndexBuilder = OracleEmbeddingStore.builder()
-        .dataSource(CommonTestOperations.getDataSource())
-        .tableName(tableName)
-        .exactSearch(false)
-        .createTable(true).createIndex(true);
-    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(DistanceMetric.valueOf(distanceMetric));
-    if (indexType != null) vectorIndexBuilder = vectorIndexBuilder.type(IndexType.valueOf(indexType));
-    if (targetAccuracy >= 0) vectorIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
+    OracleEmbeddingStore.Builder builder = OracleEmbeddingStore.builder()
+        .dataSource(CommonTestOperations.getDataSource());
+    DatabaseIndexBuilder databaseIndexBuilder = DatabaseIndexBuilderFactory.getDatabaseIndexBuilder(IndexType.valueOf(indexType));
+    VectorIndexBuilder vectorIndexBuilder = (VectorIndexBuilder) databaseIndexBuilder;
+    vectorIndexBuilder.createOption(CreateOption.CREATE_OR_REPLACE);
+    if (targetAccuracy >= 0) databaseIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
     if (degreeOfParallelism >= 0) vectorIndexBuilder = vectorIndexBuilder.degreeOfParallelism(degreeOfParallelism);
-    if (neighborPartitions >= 0) vectorIndexBuilder = vectorIndexBuilder.neighborPartitions(neighborPartitions);
-    if (samplePerPartition >= 0) vectorIndexBuilder = vectorIndexBuilder.samplePerPartition(samplePerPartition);
-    if (minVectorsPerPartition >= 0) vectorIndexBuilder = vectorIndexBuilder.minVectorsPerPartition(minVectorsPerPartition);
-    if (efConstruction >= 0) vectorIndexBuilder = vectorIndexBuilder.efConstruction(efConstruction);
-    if (neighbors >= 0) vectorIndexBuilder = vectorIndexBuilder.neighbors(neighbors);
-    vectorIndexBuilder.build();
+    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(DistanceMetric.valueOf(distanceMetric));
+
+    if (indexType == "IVF") {
+      IVFIndexBuilder ivfIndexBuilder = (IVFIndexBuilder) vectorIndexBuilder;
+      if (neighborPartitions >= 0) ivfIndexBuilder = ivfIndexBuilder.neighborPartitions(neighborPartitions);
+      if (samplePerPartition >= 0) ivfIndexBuilder = ivfIndexBuilder.samplePerPartition(samplePerPartition);
+      if (minVectorsPerPartition >= 0) ivfIndexBuilder = ivfIndexBuilder.minVectorsPerPartition(minVectorsPerPartition);
+    } else {
+      HNSWIndexBuilder hnswIndexBuilder = (HNSWIndexBuilder) vectorIndexBuilder;
+      if (efConstruction >= 0) hnswIndexBuilder = hnswIndexBuilder.efConstruction(efConstruction);
+      if (neighbors >= 0) hnswIndexBuilder = hnswIndexBuilder.neighbors(neighbors);
+    }
+    builder.embeddingTable(
+        EmbeddingTable
+            .builder()
+            .createOption(CreateOption.CREATE_IF_NOT_EXISTS)
+            .name(TABLE_NAME)
+            .vectorIndexBuilder(vectorIndexBuilder)
+            .build()
+    ).build();
     try (Connection connection = CommonTestOperations.getSysDataSource().getConnection();
          PreparedStatement stmt = connection.prepareStatement("select IDX_PARAMS from vecsys.vector$index where IDX_NAME = ?")
     ) {
-      stmt.setString(1, indexName);
+      stmt.setString(1, INDEX_NAME);
       ResultSet rs = stmt.executeQuery();
       Assertions.assertTrue(rs.next(), "A index should be returned");
       OracleJsonObject params = rs.getObject("IDX_PARAMS", OracleJsonObject.class);
@@ -80,43 +93,32 @@ public class BuilderParametersIT {
 
   @Test
   public void testExceptions() {
-    OracleEmbeddingStore.Builder vectorIndexBuilder = OracleEmbeddingStore.builder()
-        .dataSource(CommonTestOperations.getDataSource())
-        .tableName(tableName)
-        .exactSearch(false)
-        .createTable(true).createIndex(true);
+    IVFIndexBuilder ivfIndexBuilder = (IVFIndexBuilder)DatabaseIndexBuilderFactory.getDatabaseIndexBuilder(IndexType.IVF);
+
     IllegalArgumentException exception;
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.targetAccuracy(0);});
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.targetAccuracy(0);});
     Assertions.assertEquals("The target accuracy must be a value between 1 and 100.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.targetAccuracy(101);});
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.targetAccuracy(101);});
     Assertions.assertEquals("The target accuracy must be a value between 1 and 100.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.neighbors(-1);});
-    Assertions.assertEquals("The maximum number of neighbors a vector can have on any layer on a HNSW index must be between 1 and 2048.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.neighbors(2049);});
-    Assertions.assertEquals("The maximum number of neighbors a vector can have on any layer on a HNSW index must be between 1 and 2048.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.neighbors(2040);});
-    Assertions.assertEquals("This parameter can only be set on an index of type HNSW.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.efConstruction(0);});
-    Assertions.assertEquals("EFCONSTRUCTION should be value between 1 and 65535.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.efConstruction(65536);});
-    Assertions.assertEquals("EFCONSTRUCTION should be value between 1 and 65535.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.efConstruction(65500);});
-    Assertions.assertEquals("This parameter can only be set on an index of type HNSW.", exception.getMessage());
-    vectorIndexBuilder.type(IndexType.HNSW);
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.neighborPartitions(0);});
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.neighborPartitions(0);});
     Assertions.assertEquals("The maximum number of centroid partitions that are created by the IVF index cannot be lower than 1 or higher than 10000000.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.neighborPartitions(10000001);});
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.neighborPartitions(10000001);});
     Assertions.assertEquals("The maximum number of centroid partitions that are created by the IVF index cannot be lower than 1 or higher than 10000000.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.neighborPartitions(100);});
-    Assertions.assertEquals("This parameter can only be set on an index of type IVF.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.samplePerPartition(0);});
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.samplePerPartition(0);});
     Assertions.assertEquals("The maximum number of samples per partition must be 1 or higher.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.samplePerPartition(1);});
-    Assertions.assertEquals("This parameter can only be set on an index of type IVF.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.minVectorsPerPartition(-1);});
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.minVectorsPerPartition(-1);});
     Assertions.assertEquals("The minimum number of vectors per partition must be positive.", exception.getMessage());
-    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {vectorIndexBuilder.minVectorsPerPartition(0);});
-    Assertions.assertEquals("This parameter can only be set on an index of type IVF.", exception.getMessage());
+
+    HNSWIndexBuilder hnswIndexBuilder = (HNSWIndexBuilder)DatabaseIndexBuilderFactory.getDatabaseIndexBuilder(IndexType.HNSW);
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {hnswIndexBuilder.neighbors(-1);});
+    Assertions.assertEquals("The maximum number of neighbors a vector can have on any layer on a HNSW index must be between 1 and 2048.", exception.getMessage());
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {hnswIndexBuilder.neighbors(2049);});
+    Assertions.assertEquals("The maximum number of neighbors a vector can have on any layer on a HNSW index must be between 1 and 2048.", exception.getMessage());
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {hnswIndexBuilder.efConstruction(0);});
+    Assertions.assertEquals("EFCONSTRUCTION should be value between 1 and 65535.", exception.getMessage());
+    exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {hnswIndexBuilder.efConstruction(65536);});
+    Assertions.assertEquals("EFCONSTRUCTION should be value between 1 and 65535.", exception.getMessage());
+
   }
 
   private void assertDistanceMetric(String expectedDistanceMetric, OracleJsonObject params) {
@@ -166,7 +168,7 @@ public class BuilderParametersIT {
 
   static Stream<Arguments> createIndexArguments() {
     return Stream.of(
-        Arguments.arguments(null, null, -1, -1, -1, -1, -1, -1, -1),
+        Arguments.arguments(null, IndexType.IVF.toString(), -1, -1, -1, -1, -1, -1, -1),
         Arguments.arguments(DistanceMetric.COSINE.toString(), IndexType.IVF.toString(), 80, 1, 5, 2, 3, -1, -1),
         Arguments.arguments(DistanceMetric.DOT.toString(), IndexType.IVF.toString(), 50, 2, 4, 7, 1, -1, -1),
         Arguments.arguments(DistanceMetric.EUCLIDEAN.toString(), IndexType.IVF.toString(), 70, 3, -1, 2, 3, -1, -1),
