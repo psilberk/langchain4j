@@ -1,6 +1,7 @@
 package dev.langchain4j.store.embedding.oracle;
 
 import oracle.sql.json.OracleJsonObject;
+import org.assertj.core.data.Index;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -46,21 +47,12 @@ public class VectorIndexBuilderIT {
         .dataSource(CommonTestOperations.getDataSource());
     VectorIndexBuilder vectorIndexBuilder;
     if (indexType == "IVF") {
-      vectorIndexBuilder = new IVFIndexBuilder();
-      IVFIndexBuilder ivfIndexBuilder = (IVFIndexBuilder) vectorIndexBuilder;
-      if (neighborPartitions >= 0) ivfIndexBuilder = ivfIndexBuilder.neighborPartitions(neighborPartitions);
-      if (samplePerPartition >= 0) ivfIndexBuilder = ivfIndexBuilder.samplePerPartition(samplePerPartition);
-      if (minVectorsPerPartition >= 0) ivfIndexBuilder = ivfIndexBuilder.minVectorsPerPartition(minVectorsPerPartition);
+      vectorIndexBuilder = createIVFIndex(distanceMetric == null ? null : DistanceMetric.valueOf(distanceMetric),
+          targetAccuracy, degreeOfParallelism, neighborPartitions, samplePerPartition, minVectorsPerPartition);
     } else {
-      vectorIndexBuilder = new HNSWIndexBuilder();
-      HNSWIndexBuilder hnswIndexBuilder = (HNSWIndexBuilder) vectorIndexBuilder;
-      if (efConstruction >= 0) hnswIndexBuilder = hnswIndexBuilder.efConstruction(efConstruction);
-      if (neighbors >= 0) hnswIndexBuilder = hnswIndexBuilder.neighbors(neighbors);
+      vectorIndexBuilder = createHNSWIndex(distanceMetric == null ? null : DistanceMetric.valueOf(distanceMetric),
+          targetAccuracy, degreeOfParallelism, efConstruction, neighbors);
     }
-    vectorIndexBuilder.createOption(CreateOption.CREATE_OR_REPLACE);
-    if (targetAccuracy >= 0) vectorIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
-    if (degreeOfParallelism >= 0) vectorIndexBuilder = vectorIndexBuilder.degreeOfParallelism(degreeOfParallelism);
-    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(DistanceMetric.valueOf(distanceMetric));
     builder.embeddingTable(
         EmbeddingTable
             .builder()
@@ -87,7 +79,38 @@ public class VectorIndexBuilderIT {
       assertNeighbors(neighbors, params);
       Assertions.assertFalse(rs.next(), "Only one index should be returned");
     }
+  }
 
+  private VectorIndexBuilder<IVFIndexBuilder> createIVFIndex(DistanceMetric distanceMetric,
+                                                             int targetAccuracy,
+                                                             int degreeOfParallelism,
+                                                             int neighborPartitions,
+                                                             int samplePerPartition,
+                                                             int minVectorsPerPartition) {
+    IVFIndexBuilder vectorIndexBuilder = new IVFIndexBuilder().createOption(CreateOption.CREATE_OR_REPLACE);
+    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(distanceMetric);
+    if (targetAccuracy >= 0) vectorIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
+    if (neighborPartitions >= 0) vectorIndexBuilder = vectorIndexBuilder.neighborPartitions(neighborPartitions);
+    if (samplePerPartition >= 0) vectorIndexBuilder = vectorIndexBuilder.samplePerPartition(samplePerPartition);
+    if (minVectorsPerPartition >= 0) vectorIndexBuilder = vectorIndexBuilder.minVectorsPerPartition(minVectorsPerPartition);
+    if (degreeOfParallelism >= 0) vectorIndexBuilder = vectorIndexBuilder.degreeOfParallelism(degreeOfParallelism);
+
+    return vectorIndexBuilder;
+  }
+
+  private VectorIndexBuilder<HNSWIndexBuilder> createHNSWIndex(DistanceMetric distanceMetric,
+                                                               int targetAccuracy,
+                                                               int degreeOfParallelism,
+                                                               int efConstruction,
+                                                               int neighbors) {
+    HNSWIndexBuilder vectorIndexBuilder = new HNSWIndexBuilder().createOption(CreateOption.CREATE_OR_REPLACE);
+    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(distanceMetric);
+    if (targetAccuracy >= 0) vectorIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
+    if (efConstruction >= 0) vectorIndexBuilder = vectorIndexBuilder.efConstruction(efConstruction);
+    if (neighbors >= 0) vectorIndexBuilder = vectorIndexBuilder.neighbors(neighbors);
+    if (degreeOfParallelism >= 0) vectorIndexBuilder = vectorIndexBuilder.degreeOfParallelism(degreeOfParallelism);
+
+    return vectorIndexBuilder;
   }
 
   @Test
@@ -173,6 +196,7 @@ public class VectorIndexBuilderIT {
         Arguments.arguments(DistanceMetric.EUCLIDEAN.toString(), IndexType.IVF.toString(), 70, 3, -1, 2, 3, -1, -1),
         Arguments.arguments(DistanceMetric.EUCLIDEAN_SQUARED.toString(), IndexType.IVF.toString(), 90, 4, 5, -1, 3, -1, -1),
         Arguments.arguments(DistanceMetric.MANHATTAN.toString(), IndexType.IVF.toString(), 95, 5, 5, 2, -1, -1, -1),
+
         Arguments.arguments(DistanceMetric.COSINE.toString(), IndexType.HNSW.toString(), 80, 1, -1, -1, -1, -1, -1),
         Arguments.arguments(DistanceMetric.DOT.toString(), IndexType.HNSW.toString(), 80, 2, -1, -1, -1, 2, 3),
         Arguments.arguments(DistanceMetric.EUCLIDEAN.toString(), IndexType.HNSW.toString(), 80, 4, -1, -1, -1, 5, 10),

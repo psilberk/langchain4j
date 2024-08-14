@@ -11,7 +11,7 @@ package dev.langchain4j.store.embedding.oracle;
  * </ul>
  *
  */
-public class IVFIndexBuilder extends VectorIndexBuilder {
+public class IVFIndexBuilder extends VectorIndexBuilder<IVFIndexBuilder> {
 
   private int neighborPartitions = -1;
 

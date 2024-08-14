@@ -13,7 +13,7 @@ package dev.langchain4j.store.embedding.oracle;
  * It is extended by classes that implement builders that configure specific types of vector indexes
  * {@link IVFIndexBuilder} and {@link HNSWIndexBuilder}.
  */
-public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
+public abstract class VectorIndexBuilder<T> implements DatabaseIndexBuilder {
 
   /**
    * Suffix used when naming the index.
@@ -41,10 +41,10 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
    *
    * @return This builder.
    */
-  public VectorIndexBuilder createOption(CreateOption createOption) {
+  public T createOption(CreateOption createOption) {
     this.createOption = createOption;
     this.indexNameSufix = "_vector_index";
-    return this;
+    return (T)this;
   }
 
   /**
@@ -55,9 +55,9 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
    *
    * @return This builder.
    */
-  public VectorIndexBuilder distanceMetric(DistanceMetric distanceMetric) {
+  public T distanceMetric(DistanceMetric distanceMetric) {
     this.distanceMetric = distanceMetric;
-    return this;
+    return (T)this;
   }
 
   /**
@@ -67,12 +67,12 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
    * @return This builder.
    * @throws IllegalArgumentException If the target accuracy not between 1 and 100.
    */
-  public VectorIndexBuilder targetAccuracy(int targetAccuracy) throws IllegalArgumentException {
+  public T targetAccuracy(int targetAccuracy) throws IllegalArgumentException {
     if (targetAccuracy <= 0 || targetAccuracy > 100) {
       throw new IllegalArgumentException("The target accuracy must be a value between 1 and 100.");
     }
     this.targetAccuracy = targetAccuracy;
-    return this;
+    return (T)this;
   }
 
   /**
@@ -81,9 +81,9 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
    * @param degreeOfParallelism The degree of parallelism.
    * @return This builder.
    */
-  public VectorIndexBuilder degreeOfParallelism(int degreeOfParallelism) {
+  public T degreeOfParallelism(int degreeOfParallelism) {
     this.degreeOfParallelism = degreeOfParallelism;
-    return this;
+    return (T)this;
   }
 
   /**

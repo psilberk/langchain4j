@@ -10,7 +10,7 @@ package dev.langchain4j.store.embedding.oracle;
  * </ul>
  *
  */
-public class HNSWIndexBuilder extends VectorIndexBuilder {
+public class HNSWIndexBuilder extends VectorIndexBuilder<HNSWIndexBuilder> {
   private int neighbors = -1;
 
   private int efConstruction = -1;
