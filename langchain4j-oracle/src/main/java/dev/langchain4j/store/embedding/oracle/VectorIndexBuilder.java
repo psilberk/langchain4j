@@ -87,9 +87,10 @@ public abstract class VectorIndexBuilder<T> implements DatabaseIndexBuilder {
   }
 
   /**
-   * Generates the CREATE VECTOR INDEX statement.
+   * If CreateOption is equal to {@link CreateOption#CREATE_OR_REPLACE} or {@link CreateOption#CREATE_IF_NOT_EXISTS},
+   * this method generates the CREATE VECTOR INDEX, otherwise it returns null.
    *
-   * @return A SQL statement that can be used to create the index.
+   * @return A SQL statement that can be used to create the index, or null if no index should be created.
    */
   @Override
   public String getCreateStatement(String tableName, String embeddingColumn) {
@@ -109,13 +110,16 @@ public abstract class VectorIndexBuilder<T> implements DatabaseIndexBuilder {
   }
 
   /**
-   * Generates a SQL statement that can be used to drop an index on the specified
-   * table.
+   * If CreateOption is equal to {@link CreateOption#CREATE_OR_REPLACE}, this method will return a SQL statement that
+   * can be used to drop the index on the specified table, otherwise it returns null.
    *
    * @param tableName the name of the table
-   * @return A SQL statement that can be used to drop the index.
+   * @return A SQL statement that can be used to drop the index, or null if the index should not be dropped.
    */
   public String getDropStatement(String tableName) {
+    if (createOption != CreateOption.CREATE_OR_REPLACE) {
+      return null;
+    }
     return "DROP INDEX IF EXISTS " + getIndexName(tableName);
   }
 
