@@ -1,8 +1,16 @@
-package dev.langchain4j.store.embedding.oracle.index;
+package dev.langchain4j.store.embedding.oracle;
 
-import dev.langchain4j.store.embedding.oracle.CreateOption;
-import dev.langchain4j.store.embedding.oracle.DistanceMetric;
-
+/**
+ * Builder that configures an Inverted File Flat (IVF) index. If extends
+ * {@link VectorIndexBuilder} and configures parameters that are specific
+ * to an IVF index:
+ * <ul>
+ *   <li>Neighbor partitions</li>
+ *   <li>Samples per partition</li>
+ *   <li>Minimum number of vectors per partition</li>
+ * </ul>
+ *
+ */
 public class IVFIndexBuilder extends VectorIndexBuilder {
 
   private int neighborPartitions = -1;
@@ -13,26 +21,6 @@ public class IVFIndexBuilder extends VectorIndexBuilder {
 
   public IVFIndexBuilder() {
     this.indexType = IndexType.IVF;
-  }
-
-  @Override
-  public IVFIndexBuilder createOption(CreateOption createOption) {
-    return (IVFIndexBuilder)super.createOption(createOption);
-  }
-
-  @Override
-  public IVFIndexBuilder targetAccuracy(int targetAccuracy) throws IllegalArgumentException {
-    return (IVFIndexBuilder)super.targetAccuracy(targetAccuracy);
-  }
-
-  @Override
-  public IVFIndexBuilder degreeOfParallelism(int degreeOfParallelism) {
-    return (IVFIndexBuilder)super.degreeOfParallelism(degreeOfParallelism);
-  }
-
-  @Override
-  public IVFIndexBuilder distanceMetric(DistanceMetric distanceMetric) {
-    return (IVFIndexBuilder)super.distanceMetric(distanceMetric);
   }
 
   /**
@@ -105,18 +93,13 @@ public class IVFIndexBuilder extends VectorIndexBuilder {
     return this;
   }
 
-  @Override
-  public String getCreateStatement(String tableName, String embeddingColumn) {
-    if (createOption == CreateOption.CREATE_NONE) return null;
-    return generateCreateStatement(tableName, embeddingColumn) + getIVFParameters();
-  }
-
   /**
    * Generates the PARAMETERS clause for a IVF index.
    *
    * @return A string containing the PARAMETERS clause of the CREATE VECTOR INDEX statement.
    */
-  private String getIVFParameters() {
+  @Override
+  String getIndexParameters() {
     if (neighborPartitions == -1 && samplePerPartition == -1 && minVectorsPerPartition == -1) {
       return " ";
     }

@@ -20,3 +20,5 @@ Alternatively, the tests can connect to an Oracle Database if the following envi
 - ORACLE_JDBC_URL : Set to an [Oracle JDBC URL](https://docs.oracle.com/en/database/oracle/oracle-database/23/jjdbc/data-sources-and-URLs.html#GUID-C4F2CA86-0F68-400C-95DA-30171C9FB8F0), such as `jdbc:oracle:thin@example:1521/serviceName`
 - ORACLE_JDBC_USER : Set to the name of a database user. (Optional)
 - ORACLE_JDBC_PASSWORD : Set to the password of a database user. (Optional)
+
+Note that VectorIndexBuilderIT test requires the user to have access to the [vecsys.vector$index](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/vecsys-vectorindex.html) table. 

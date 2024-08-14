@@ -1,11 +1,28 @@
-package dev.langchain4j.store.embedding.oracle.index;
+package dev.langchain4j.store.embedding.oracle;
 
-import dev.langchain4j.store.embedding.oracle.CreateOption;
-import dev.langchain4j.store.embedding.oracle.DistanceMetric;
-import dev.langchain4j.store.embedding.oracle.index.DatabaseIndexBuilder;
-import dev.langchain4j.store.embedding.oracle.index.IndexType;
-
+/**
+ * Builder that configures a vector index.
+ *
+ * This class configures parameters that are common to the different types of vector index:
+ * <ul>
+ *   <li>Distance metric</li>
+ *   <li>Target accuracy</li>
+ *   <li>Degree of parallelism</li>
+ * </ul>
+ *
+ * It is extended by classes that implement builders that configure specific types of vector indexes
+ * {@link IVFIndexBuilder} and {@link HNSWIndexBuilder}.
+ */
 public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
+
+  /**
+   * Suffix used when naming the index.
+   */
+  private String indexNameSufix = "_vector_index";
+  /**
+   * CreateOption for the index. By default, the index will not be created.
+   */
+  private CreateOption createOption = CreateOption.CREATE_NONE;
 
   protected IndexType indexType = IndexType.IVF;
 
@@ -14,8 +31,6 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
   protected int degreeOfParallelism = -1;
 
   protected DistanceMetric distanceMetric = DistanceMetric.COSINE;
-
-  protected CreateOption createOption = CreateOption.CREATE_NONE;
 
   /**
    * Configures the option to create (or not create) an index. The default is
@@ -28,9 +43,18 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
    */
   public VectorIndexBuilder createOption(CreateOption createOption) {
     this.createOption = createOption;
+    this.indexNameSufix = "_vector_index";
     return this;
   }
 
+  /**
+   * Configures the distance metric that will be used by the index. The default is
+   * {@link DistanceMetric#COSINE}.
+   *
+   * @param distanceMetric The distance metric.
+   *
+   * @return This builder.
+   */
   public VectorIndexBuilder distanceMetric(DistanceMetric distanceMetric) {
     this.distanceMetric = distanceMetric;
     return this;
@@ -67,25 +91,42 @@ public abstract class VectorIndexBuilder implements DatabaseIndexBuilder {
    *
    * @return A SQL statement that can be used to create the index.
    */
-  protected String generateCreateStatement(String tableName, String embeddingColumn) {
-    String sqlStatement = "CREATE VECTOR INDEX IF NOT EXISTS " + getIndexName(tableName) +
+  @Override
+  public String getCreateStatement(String tableName, String embeddingColumn) {
+    if (createOption == CreateOption.CREATE_NONE) {
+      return null;
+    }
+    String sqlStatement = "CREATE VECTOR INDEX " +
+        (createOption == CreateOption.CREATE_IF_NOT_EXISTS ? "IF NOT EXISTS " : "") +
+        getIndexName(tableName) +
         " ON " + tableName + "( " + embeddingColumn + " ) " +
         indexType.oragnization +
         (distanceMetric != null ? " WITH DISTANCE " + distanceMetric.toString() + " " : "") +
         (targetAccuracy > 0 ? " WITH TARGET ACCURACY " + targetAccuracy + " " : "") +
-        (degreeOfParallelism >= 0 ? " PARALLEL " + degreeOfParallelism : "");
+        (degreeOfParallelism >= 0 ? " PARALLEL " + degreeOfParallelism : "") +
+        getIndexParameters();
     return sqlStatement;
   }
 
-  private String getIndexName(String tableName) {
-    return tableName + "_vector_index";
+  /**
+   * Generates a SQL statement that can be used to drop an index on the specified
+   * table.
+   *
+   * @param tableName the name of the table
+   * @return A SQL statement that can be used to drop the index.
+   */
+  public String getDropStatement(String tableName) {
+    return "DROP INDEX IF EXISTS " + getIndexName(tableName);
   }
 
-  @Override
-  public String getDropStatement(String tableName) {
-    if (createOption == CreateOption.CREATE_OR_REPLACE) {
-      return "DROP INDEX IF EXISTS " + getIndexName(tableName);
-    }
-    return null;
+  private String getIndexName(String tableName) {
+    return tableName + indexNameSufix;
   }
+
+  /**
+   * Generates the PARAMETERS clause of the vector index. Implementation depends on the type of vector index.
+   * @return A string containing the PARAMETERS clause of the index.
+   */
+  abstract String getIndexParameters();
+
 }

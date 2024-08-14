@@ -1,4 +1,4 @@
-package dev.langchain4j.store.embedding.oracle.index;
+package dev.langchain4j.store.embedding.oracle;
 
 /**
  * <p>

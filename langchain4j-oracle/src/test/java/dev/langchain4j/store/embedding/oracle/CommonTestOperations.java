@@ -3,9 +3,10 @@ package dev.langchain4j.store.embedding.oracle;
 import dev.langchain4j.model.embedding.AllMiniLmL6V2QuantizedEmbeddingModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import oracle.jdbc.OracleConnection;
-import oracle.jdbc.datasource.OracleDataSource;
 import oracle.sql.CHAR;
 import oracle.sql.CharacterSet;
+import oracle.ucp.jdbc.PoolDataSource;
+import oracle.ucp.jdbc.PoolDataSourceFactory;
 import org.testcontainers.oracle.OracleContainer;
 import org.testcontainers.utility.MountableFile;
 
@@ -49,49 +50,50 @@ final class CommonTestOperations {
 
     private CommonTestOperations() {}
 
-    private static final DataSource DATA_SOURCE;
-    private static final DataSource SYS_DATA_SOURCE;
+    private static final PoolDataSource DATA_SOURCE = PoolDataSourceFactory.getPoolDataSource();
+    private static final PoolDataSource VECTOR_INDEX_DATA_SOURCE = PoolDataSourceFactory.getPoolDataSource();
+
     static {
+        String urlFromEnv = System.getenv("ORACLE_JDBC_URL");
+        if (urlFromEnv == null) {
+            // The Ryuk component is relied upon to stop this container.
+            OracleContainer oracleContainer = new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart")
+                .withCopyFileToContainer(MountableFile.forClasspathResource("/init.sql"),
+                    "/container-entrypoint-initdb.d/initialize.sql")
+                .withDatabaseName("pdb1")
+                .withUsername("testuser")
+                .withPassword("testpwd");
+            oracleContainer.start();
+            initDataSource(DATA_SOURCE,
+                oracleContainer.getJdbcUrl(), oracleContainer.getUsername(), oracleContainer.getPassword());
+            initDataSource(VECTOR_INDEX_DATA_SOURCE,
+                oracleContainer.getJdbcUrl(), "sys", oracleContainer.getPassword());
+        } else {
+            initDataSource(DATA_SOURCE,
+                urlFromEnv, System.getenv("ORACLE_JDBC_USER"), System.getenv("ORACLE_JDBC_PASSWORD"));
+            initDataSource(VECTOR_INDEX_DATA_SOURCE,
+                urlFromEnv, System.getenv("ORACLE_JDBC_USER"), System.getenv("ORACLE_JDBC_PASSWORD"));
+        }
         try {
-            OracleDataSource oracleDataSource = new oracle.jdbc.datasource.impl.OracleDataSource();
-            OracleDataSource sysDataSource = new oracle.jdbc.datasource.impl.OracleDataSource();
-            String urlFromEnv = System.getenv("ORACLE_JDBC_URL");
-
-            if (urlFromEnv == null) {
-                // The Ryuk component is relied upon to stop this container.
-                OracleContainer oracleContainer = new OracleContainer("gvenzl/oracle-free:23.4-slim-faststart")
-                    .withCopyFileToContainer(MountableFile.forClasspathResource("/init.sql"),
-                        "/container-entrypoint-initdb.d/initialize.sql")
-                    .withDatabaseName("pdb1")
-                    .withUsername("testuser")
-                    .withPassword("testpwd");
-                oracleContainer.start();
-
-                oracleDataSource.setURL(oracleContainer.getJdbcUrl());
-                oracleDataSource.setUser(oracleContainer.getUsername());
-                oracleDataSource.setPassword(oracleContainer.getPassword());
-
-                sysDataSource.setURL(oracleContainer.getJdbcUrl());
-                sysDataSource.setUser("sys");
-                sysDataSource.setPassword(oracleContainer.getPassword());
-            }
-            else {
-                oracleDataSource.setURL(urlFromEnv);
-                oracleDataSource.setUser(System.getenv("ORACLE_JDBC_USER"));
-                oracleDataSource.setPassword(System.getenv("ORACLE_JDBC_PASSWORD"));
-
-                sysDataSource.setURL(urlFromEnv);
-                sysDataSource.setUser(System.getenv("ORACLE_SYS_USER"));
-                sysDataSource.setPassword(System.getenv("ORACLE_SYS_PASSWORD"));
-            }
-            sysDataSource.setConnectionProperty(OracleConnection.CONNECTION_PROPERTY_INTERNAL_LOGON, "SYSDBA");
-
-            DATA_SOURCE = new TestDataSource(oracleDataSource);
-            SYS_DATA_SOURCE = new TestDataSource(sysDataSource);
+            VECTOR_INDEX_DATA_SOURCE.setConnectionProperty(OracleConnection.CONNECTION_PROPERTY_INTERNAL_LOGON,
+                "SYSDBA");
         } catch (
-                SQLException sqlException) {
+            SQLException sqlException) {
             throw new AssertionError(sqlException);
         }
+    }
+
+    static void initDataSource(PoolDataSource dataSource, String url, String username, String password) {
+        try {
+            dataSource.setConnectionFactoryClassName("oracle.jdbc.datasource.impl.OracleDataSource");
+            dataSource.setURL(url);
+            dataSource.setUser(username);
+            dataSource.setPassword(password);
+        } catch (
+            SQLException sqlException) {
+            throw new AssertionError(sqlException);
+        }
+
     }
 
     static EmbeddingModel getEmbeddingModel() {
@@ -102,25 +104,32 @@ final class CommonTestOperations {
         return DATA_SOURCE;
     }
 
-    static DataSource getSysDataSource() {
-        return SYS_DATA_SOURCE;
+    static DataSource getVectorIndexDataSource() {
+        return VECTOR_INDEX_DATA_SOURCE;
     }
 
-
     /**
-     * Drops any table previously created by this method, and returns an embedding stored configured to use a new table.
-     * Tests should make use of {@link #dropTable()} to clean up after they're finished.
+     * Returns an embedding store configured to use a table with the common {@link #TABLE_NAME}. Any existing table
+     * with this name is dropped and recreated. Tests should make use of {@link #dropTable()} to clean up after they're
+     * finished.
      *
      * @return An embedding store configured to use a new table. Not null.
      */
     static OracleEmbeddingStore newEmbeddingStore() {
+        return newEmbeddingStoreBuilder().build();
+    }
+
+    /**
+     * Returns a builder configured to use a table with the common {@link #TABLE_NAME}. Any existing table
+     * with this name is dropped and recreated when build() is called. Tests should make use of {@link #dropTable()} to
+     * clean up after they're finished.
+     *
+     * @return A builder configured to use a new table. Not null.
+     */
+    static OracleEmbeddingStore.Builder newEmbeddingStoreBuilder() {
         return OracleEmbeddingStore.builder()
                 .dataSource(getDataSource())
-                .embeddingTable(EmbeddingTable.builder()
-                        .name(TABLE_NAME)
-                        .createOption(CreateOption.CREATE_OR_REPLACE)
-                        .build())
-                .build();
+                .embeddingTable(TABLE_NAME, CreateOption.CREATE_OR_REPLACE);
     }
 
     /**
@@ -177,6 +186,4 @@ final class CommonTestOperations {
 
         return floats;
     }
-
-
 }

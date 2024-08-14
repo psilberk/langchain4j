@@ -1,6 +1,5 @@
 package dev.langchain4j.store.embedding.oracle;
 
-import dev.langchain4j.store.embedding.oracle.index.*;
 import oracle.sql.json.OracleJsonObject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -15,7 +14,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.stream.Stream;
 
-public class BuilderParametersIT {
+public class VectorIndexBuilderIT {
 
   static final String TABLE_NAME = "EMBEDDING_STORE";
   static final String INDEX_NAME = TABLE_NAME + "_VECTOR_INDEX";
@@ -45,23 +44,23 @@ public class BuilderParametersIT {
       int neighbors) throws Exception {
     OracleEmbeddingStore.Builder builder = OracleEmbeddingStore.builder()
         .dataSource(CommonTestOperations.getDataSource());
-    DatabaseIndexBuilder databaseIndexBuilder = DatabaseIndexBuilderFactory.getDatabaseIndexBuilder(IndexType.valueOf(indexType));
-    VectorIndexBuilder vectorIndexBuilder = (VectorIndexBuilder) databaseIndexBuilder;
-    vectorIndexBuilder.createOption(CreateOption.CREATE_OR_REPLACE);
-    if (targetAccuracy >= 0) databaseIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
-    if (degreeOfParallelism >= 0) vectorIndexBuilder = vectorIndexBuilder.degreeOfParallelism(degreeOfParallelism);
-    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(DistanceMetric.valueOf(distanceMetric));
-
+    VectorIndexBuilder vectorIndexBuilder;
     if (indexType == "IVF") {
+      vectorIndexBuilder = new IVFIndexBuilder();
       IVFIndexBuilder ivfIndexBuilder = (IVFIndexBuilder) vectorIndexBuilder;
       if (neighborPartitions >= 0) ivfIndexBuilder = ivfIndexBuilder.neighborPartitions(neighborPartitions);
       if (samplePerPartition >= 0) ivfIndexBuilder = ivfIndexBuilder.samplePerPartition(samplePerPartition);
       if (minVectorsPerPartition >= 0) ivfIndexBuilder = ivfIndexBuilder.minVectorsPerPartition(minVectorsPerPartition);
     } else {
+      vectorIndexBuilder = new HNSWIndexBuilder();
       HNSWIndexBuilder hnswIndexBuilder = (HNSWIndexBuilder) vectorIndexBuilder;
       if (efConstruction >= 0) hnswIndexBuilder = hnswIndexBuilder.efConstruction(efConstruction);
       if (neighbors >= 0) hnswIndexBuilder = hnswIndexBuilder.neighbors(neighbors);
     }
+    vectorIndexBuilder.createOption(CreateOption.CREATE_OR_REPLACE);
+    if (targetAccuracy >= 0) vectorIndexBuilder = vectorIndexBuilder.targetAccuracy(targetAccuracy);
+    if (degreeOfParallelism >= 0) vectorIndexBuilder = vectorIndexBuilder.degreeOfParallelism(degreeOfParallelism);
+    if (distanceMetric != null) vectorIndexBuilder = vectorIndexBuilder.distanceMetric(DistanceMetric.valueOf(distanceMetric));
     builder.embeddingTable(
         EmbeddingTable
             .builder()
@@ -70,7 +69,7 @@ public class BuilderParametersIT {
             .vectorIndexBuilder(vectorIndexBuilder)
             .build()
     ).build();
-    try (Connection connection = CommonTestOperations.getSysDataSource().getConnection();
+    try (Connection connection = CommonTestOperations.getVectorIndexDataSource().getConnection();
          PreparedStatement stmt = connection.prepareStatement("select IDX_PARAMS from vecsys.vector$index where IDX_NAME = ?")
     ) {
       stmt.setString(1, INDEX_NAME);
@@ -93,7 +92,7 @@ public class BuilderParametersIT {
 
   @Test
   public void testExceptions() {
-    IVFIndexBuilder ivfIndexBuilder = (IVFIndexBuilder)DatabaseIndexBuilderFactory.getDatabaseIndexBuilder(IndexType.IVF);
+    IVFIndexBuilder ivfIndexBuilder = new IVFIndexBuilder();
 
     IllegalArgumentException exception;
     exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.targetAccuracy(0);});
@@ -109,7 +108,7 @@ public class BuilderParametersIT {
     exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {ivfIndexBuilder.minVectorsPerPartition(-1);});
     Assertions.assertEquals("The minimum number of vectors per partition must be positive.", exception.getMessage());
 
-    HNSWIndexBuilder hnswIndexBuilder = (HNSWIndexBuilder)DatabaseIndexBuilderFactory.getDatabaseIndexBuilder(IndexType.HNSW);
+    HNSWIndexBuilder hnswIndexBuilder = new HNSWIndexBuilder();
     exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {hnswIndexBuilder.neighbors(-1);});
     Assertions.assertEquals("The maximum number of neighbors a vector can have on any layer on a HNSW index must be between 1 and 2048.", exception.getMessage());
     exception = Assertions.assertThrows(IllegalArgumentException.class, () -> {hnswIndexBuilder.neighbors(2049);});

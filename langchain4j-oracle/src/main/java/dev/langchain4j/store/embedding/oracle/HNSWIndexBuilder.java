@@ -1,8 +1,15 @@
-package dev.langchain4j.store.embedding.oracle.index;
+package dev.langchain4j.store.embedding.oracle;
 
-import dev.langchain4j.store.embedding.oracle.CreateOption;
-import dev.langchain4j.store.embedding.oracle.DistanceMetric;
-
+/**
+ * Builder that configures a Hierarchical Navigable Small World (HNSW) index.
+ * It extends {@link VectorIndexBuilder} and configures parameters that are
+ * specific to a HNSW index:
+ * <ul>
+ *   <li>Neighbors</li>
+ *   <li>EFCONSTRUCTION</li>
+ * </ul>
+ *
+ */
 public class HNSWIndexBuilder extends VectorIndexBuilder {
   private int neighbors = -1;
 
@@ -10,26 +17,6 @@ public class HNSWIndexBuilder extends VectorIndexBuilder {
 
   public HNSWIndexBuilder() {
     this.indexType = IndexType.HNSW;
-  }
-
-  @Override
-  public VectorIndexBuilder createOption(CreateOption createOption) {
-    return (HNSWIndexBuilder)super.createOption(createOption);
-  }
-
-  @Override
-  public HNSWIndexBuilder targetAccuracy(int targetAccuracy) throws IllegalArgumentException {
-    return (HNSWIndexBuilder)super.targetAccuracy(targetAccuracy);
-  }
-
-  @Override
-  public HNSWIndexBuilder degreeOfParallelism(int degreeOfParallelism) {
-    return (HNSWIndexBuilder)super.degreeOfParallelism(degreeOfParallelism);
-  }
-
-  @Override
-  public HNSWIndexBuilder distanceMetric(DistanceMetric distanceMetric) {
-    return (HNSWIndexBuilder)super.distanceMetric(distanceMetric);
   }
 
   /**
@@ -90,18 +77,13 @@ public class HNSWIndexBuilder extends VectorIndexBuilder {
     return this;
   }
 
-  @Override
-  public String getCreateStatement(String tableName, String embeddingColumn) {
-    if (createOption == CreateOption.CREATE_NONE) return null;
-    return generateCreateStatement(tableName, embeddingColumn) + getHNSWParameters();
-  }
-
   /**
    * Generates the PARAMETERS clause for a HNSW index.
    *
    * @return A string containing the PARAMETERS clause of the CREATE VECTOR INDEX statement.
    */
-  private String getHNSWParameters() {
+  @Override
+  String getIndexParameters() {
     if (neighbors == -1 && efConstruction == -1) {
       return " ";
     }
