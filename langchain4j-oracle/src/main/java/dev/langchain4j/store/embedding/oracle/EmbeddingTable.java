@@ -86,7 +86,7 @@ public final class EmbeddingTable {
     /** Name of a column which stores metadata. */
     private final String metadataColumn;
 
-    private final DatabaseIndexBuilder vectorIndexBuilder;
+    private final VectorIndexBuilder vectorIndexBuilder;
 
     private EmbeddingTable(Builder builder) {
         createOption = ensureNotNull(builder.createOption, "createOption");
@@ -116,8 +116,9 @@ public final class EmbeddingTable {
                     + "PRIMARY KEY (" + idColumn + "))");
 
             if (vectorIndexBuilder != null) {
-                String dropStatement = vectorIndexBuilder.getDropStatement(name);
-                String createStatement = vectorIndexBuilder.getCreateStatement(name, embeddingColumn);
+                vectorIndexBuilder.setEmbeddingTable(this);
+                String dropStatement = vectorIndexBuilder.getDropStatement();
+                String createStatement = vectorIndexBuilder.getCreateStatement();
                 if (dropStatement != null) {
                     statement.addBatch(dropStatement);
                 }

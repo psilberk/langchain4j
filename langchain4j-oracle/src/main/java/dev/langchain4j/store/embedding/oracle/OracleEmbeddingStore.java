@@ -676,4 +676,44 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             return new OracleEmbeddingStore(this);
         }
     }
+
+    public IndexBuilder getNewIndexBuilder() {
+        return new IndexBuilder(table, metadataKeyMapper);
+    }
+
+    public VectorIndexBuilder getNewVectorIndexBuilder(IndexType indexType) {
+        VectorIndexBuilder vectorIndexBuilder;
+        switch (indexType) {
+            case HNSW:
+                vectorIndexBuilder = new HNSWIndexBuilder();
+                break;
+            default:
+                vectorIndexBuilder = new IVFIndexBuilder();
+                break;
+        }
+        vectorIndexBuilder.setEmbeddingTable(table);
+        return vectorIndexBuilder;
+    }
+
+    /**
+     * Creates all indexes described by the builders.
+     * @param builders Array containing all indexes to create.
+     * @throws SQLException If an SQLException occurs while creating the indexes.
+     */
+    public void addIndexes(DatabaseIndexBuilder[] builders) throws SQLException {
+        try (Connection connection = this.dataSource.getConnection();
+             Statement statement = connection.createStatement()
+        ) {
+            for (DatabaseIndexBuilder item : builders) {
+                if (item.getDropStatement() != null) {
+                    statement.addBatch(item.getDropStatement());
+                }
+                if (item.getCreateStatement() != null) {
+                    statement.addBatch(item.getCreateStatement());
+                }
+            }
+            statement.executeBatch();
+        }
+    }
+
 }
