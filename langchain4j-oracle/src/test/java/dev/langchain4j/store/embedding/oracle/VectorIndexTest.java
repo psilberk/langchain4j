@@ -52,7 +52,7 @@ public class VectorIndexTest {
                              " AND index_type='VECTOR'"
              )) {
 
-            if (createOption == CreateOption.CREATE_NONE)
+            if (createOption == CreateOption.DO_NOT_CREATE)
                 assertFalse(resultSet.next());
             else
                 assertTrue(resultSet.next());

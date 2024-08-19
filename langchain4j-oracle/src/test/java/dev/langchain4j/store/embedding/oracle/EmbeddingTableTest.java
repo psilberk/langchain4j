@@ -2,7 +2,6 @@ package dev.langchain4j.store.embedding.oracle;
 
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.comparison.IsNotEqualTo;
@@ -125,7 +124,7 @@ public class EmbeddingTableTest {
                 OracleEmbeddingStore.builder()
                         .dataSource(getDataSource())
                         .embeddingTable(EmbeddingTable.builder()
-                                .createOption(CREATE_NONE)
+                                .createOption(DO_NOT_CREATE)
                                 .name(tableName)
                                 .build())
                         .build()
