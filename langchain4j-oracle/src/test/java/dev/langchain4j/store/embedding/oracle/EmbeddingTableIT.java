@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * Verifies {@link OracleEmbeddingStore.Builder} methods which configure the names of columns.
  */
-public class EmbeddingTableTest {
+public class EmbeddingTableIT {
 
     /**
      *  Verifies that {@link dev.langchain4j.store.embedding.oracle.OracleEmbeddingStore.Builder#build()} creates a
