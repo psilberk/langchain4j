@@ -19,7 +19,7 @@ public enum DistanceMetric {
      * The negated dot product of two vectors
      * </a>. This metric is also referred to as the "inner product".
      */
-    DOT,
+    DOT_PRODUCT("DOT"),
 
     /**
      * <a href="https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/euclidean-and-squared-euclidean-distances.html">
@@ -51,4 +51,39 @@ public enum DistanceMetric {
      */
     MANHATTAN;
 
+    /**
+     * The name for this distance metric that is recognized in Oracle SQL statements, such as the
+     * <a href="https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/vector_distance-vecse.html">
+     * VECTOR_DISTANCE
+     * </a> function or a CREATE VECTOR INDEX command.
+     */
+    private final String sqlName;
+
+    /**
+     * Constructs a distance metric with a {@link #sqlName} that is identical to the enum {@link #name()}.
+     */
+    DistanceMetric() {
+        this.sqlName = name();
+    }
+
+    /**
+     * Constructs a distance metric with a specified {@link #sqlName}.
+     *
+     * @param sqlName Name of the metric which is recognized by the VECTOR_DISTANCE function.
+     */
+    DistanceMetric(String sqlName) {
+       this.sqlName = sqlName;
+    }
+
+    /**
+     * The name for this distance metric that is recognized in Oracle SQL statements, such as the
+     * <a href="https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/vector_distance-vecse.html">
+     * VECTOR_DISTANCE
+     * </a> function or a CREATE VECTOR INDEX command.
+     *
+     * @return The name recognized by VECTOR_DISTANCE. Not null.
+     */
+    String sqlName() {
+        return sqlName;
+    }
 }

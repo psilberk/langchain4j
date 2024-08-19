@@ -74,7 +74,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final UnaryOperator<String> metadataKeyMapper;
 
     /**
-     * Distance metric used for similarity searches
+     * Distance metric used for similarity searches and vector index creation.
      */
     private final DistanceMetric distanceMetric;
 
@@ -137,7 +137,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             statement.addBatch("CREATE VECTOR INDEX IF NOT EXISTS " + indexName +
                         " ON " + tableName + "(" + builder.embeddingTable.embeddingColumn() + ")" +
                         " ORGANIZATION NEIGHBOR PARTITIONS" +
-                        " WITH DISTANCE " + builder.distanceMetric.name());
+                        " WITH DISTANCE " + builder.distanceMetric.sqlName());
 
             statement.executeBatch();
         }
@@ -320,7 +320,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement query = connection.prepareStatement(
                      "SELECT VECTOR_DISTANCE(" +
-                             table.embeddingColumn() + ", ?, " + distanceMetric.name() + ") distance, " +
+                             table.embeddingColumn() + ", ?, " + distanceMetric.sqlName() + ") distance, " +
                              String.join(", ", table.idColumn(), table.embeddingColumn(), table.textColumn(),
                                      table.metadataColumn()) +
                          " FROM " + table.name() +
