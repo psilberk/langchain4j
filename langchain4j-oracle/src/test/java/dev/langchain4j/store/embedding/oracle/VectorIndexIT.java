@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests which verify all possible configurations of {@link OracleEmbeddingStore.Builder#vectorIndex(CreateOption)}
  */
-public class VectorIndexTest {
+public class VectorIndexIT {
 
     @ParameterizedTest
     @EnumSource(CreateOption.class)
