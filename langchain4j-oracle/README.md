@@ -17,8 +17,8 @@ This module implements `EmbeddingStore` using Oracle Database.
 
 Instances of this store can be created by configuring a builder. The builder 
 requires that a DataSource and an embedding table be provided. The distance 
-between two vectors is calculated using [cosine similarity](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/cosine-similarity.html)
-which measures the cosine of the angle between two vectors.
+between two vectors is calculated using <a href="https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/cosine-similarity.html"
+target="_blank">cosine similarity</a> which measures the cosine of the angle between two vectors.
 
 It is recommended to configure a DataSource which pools connections, such as the
 Universal Connection Pool or Hikari. A connection pool will avoid the latency of
@@ -74,12 +74,12 @@ OracleEmbeddingStore.builder()
 The builder provides two other methods that allow to create an index on the 
 embedding column and configure the use of exact or approximate search. 
 
-For more information about Oracle AI Vector Search refer to the [documentation](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/overview-ai-vector-search.html).
+For more information about Oracle AI Vector Search refer to the <a href="https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/overview-ai-vector-search.html" target="_blank">documentation</a>.
 
 ## Running the Test Suite
-By default, integration tests will
-[run a docker image of Oracle Database using TestContainers](https://java.testcontainers.org/modules/databases/oraclefree/).
+By default, integration tests will <a href="https://java.testcontainers.org/modules/databases/oraclefree/" target="_blank">
+run a docker image of Oracle Database using TestContainers</a>.
 Alternatively, the tests can connect to an Oracle Database if the following environment variables are configured:
-- ORACLE_JDBC_URL : Set to an [Oracle JDBC URL](https://docs.oracle.com/en/database/oracle/oracle-database/23/jjdbc/data-sources-and-URLs.html#GUID-C4F2CA86-0F68-400C-95DA-30171C9FB8F0), such as `jdbc:oracle:thin@example:1521/serviceName`
+- ORACLE_JDBC_URL : Set to an <a href="https://docs.oracle.com/en/database/oracle/oracle-database/23/jjdbc/data-sources-and-URLs.html#GUID-C4F2CA86-0F68-400C-95DA-30171C9FB8F0" target="_blank">Oracle JDBC URL</a>, such as `jdbc:oracle:thin@example:1521/serviceName`
 - ORACLE_JDBC_USER : Set to the name of a database user. (Optional)
 - ORACLE_JDBC_PASSWORD : Set to the password of a database user. (Optional)
