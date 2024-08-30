@@ -1,14 +1,18 @@
 package dev.langchain4j.store.embedding.oracle;
 
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.SQLType;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
 
@@ -85,6 +89,14 @@ public final class EmbeddingTable {
 
     /** Name of a column which stores metadata. */
     private final String metadataColumn;
+    private List<TableIndex> tableIndexes = new ArrayList<>();
+
+    /**
+     * The mapping function for use with {@link SQLFilters#create(Filter, BiFunction)}. The function maps a
+     * {@link Metadata} key to a field of the JSON "metadata" column. The builtin JSON_VALUE function is used to
+     * evaluate a JSON path expression.
+     */
+    private final BiFunction<String, SQLType, String> metadataKeyMapper;
 
     private EmbeddingTable(Builder builder) {
         createOption = builder.createOption;
@@ -93,7 +105,10 @@ public final class EmbeddingTable {
         embeddingColumn = builder.embeddingColumn;
         textColumn = builder.textColumn;
         metadataColumn = builder.metadataColumn;
+        metadataKeyMapper = (key, type) -> "JSON_VALUE(" + metadataColumn + ", '$." + key + "' RETURNING "
+                + type.getName() + ")";
     }
+
 
     /**
      * Creates a table configured by the {@link Builder} of this EmbeddingTable. No table is created if the Builder was
@@ -168,6 +183,26 @@ public final class EmbeddingTable {
     public String metadataColumn() {
         return metadataColumn;
     }
+
+    /**
+     * Returns the mapping function for use with
+     * {@link SQLFilters#create(Filter, BiFunction)}. The function maps a
+     * {@link Metadata} key to a field of the JSON "metadata" column. The builtin
+     * JSON_VALUE function is used to evaluate a JSON path expression.
+     * 
+     * @return the mapping function for use with
+     *         {@link SQLFilters#create(Filter, BiFunction)}.
+     */
+    public BiFunction<String, SQLType, String> metadataKeyMapper() {
+        return metadataKeyMapper;
+    }
+
+    /**
+     * Returns an iterable of the table indexes that have been added to the embedding
+     * table.
+     * @return The iterable of the table indexes.
+     */
+    public Iterable<TableIndex> getTableIndexes() { return tableIndexes; }
 
     /**
      * Returns a builder that configures a new EmbeddingTable.

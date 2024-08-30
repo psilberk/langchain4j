@@ -71,8 +71,63 @@ OracleEmbeddingStore.builder()
     .build();
 ```
 
-The builder provides two other methods that allow to create an index on the 
-embedding column and configure the use of exact or approximate search. 
+The builder allows you to create an index on the embedding column by providing
+the CreateOption for the vector index using the vector index method. This will 
+create an Inverted File Flat (IVF) index on the embedding column with default
+configuration.
+
+```java
+OracleEmbeddingStore embeddingStore =
+OracleEmbeddingStore.builder()
+    .dataSource(myDataSource)
+    .embeddingTable(EmbeddingTable.builder()
+            .createOption(CREATE_OR_REPLACE) // use NONE if the table already exists
+            .name("my_embedding_table")
+            .idColumn("id_column_name")
+            .embeddingColumn("embedding_column_name")
+            .textColumn("text_column_name")
+            .metadataColumn("metadata_column_name")
+            .vectorIndex(CREATE_OR_REPLACE)
+            .build())
+    .build();
+```
+
+To configure the index, create a Hierarchical Navigable Small World index or
+create an index on the JSON keys of the metadata column you can use index 
+builders. Index builders allow you to create three types on indexes:
+- IVF_VECTOR_INDEX: creates an Inverted File Flat (IVF) index on the embedding
+column;
+- HNSW_VECTOR_INDEX: creates a Hierarchical Navigable Small World (HNSW) index
+on the embedding column;
+- FUNCTION_JSON_INDEX: creates a function based index on one or several keys of
+the JSON document using the same function used by the embedding store to filter.
+
+```java
+JsonIndexBuilder jsonIndexBuilder = (JsonIndexBuilder) embeddingStore.getIndexBuilder(IndexType.FUNCTION_JSON_INDEX);
+String indexName = embeddingStore.createIndex(
+    jsonIndexBuilder
+        .key("author", OracleType.VARCHAR2, JsonIndexBuilder.Order.ASC)
+        .key("publication_year", OracleType.NUMBER, JsonIndexBuilder.Order.ASC)
+        .createOption(CreateOption.CREATE_OR_REPLACE)
+        .build());
+```
+
+```java
+IVFIndexBuilder ivfIndexBuilder = (IVFIndexBuilder) embeddingStore.getIndexBuilder(IndexType.IVF_VECTOR_INDEX);
+String indexName = embeddingStore.createIndex(
+    ivfIndexBuilder
+        .createOption(CreateOption.CREATE_IF_NOT_EXISTS)
+        .minVectorsPerPartition(10)
+        .neighborPartitions(3)
+        .samplePerPartition(15)
+        .targetAccuracy(90)
+        .build());
+```
+
+Indexes can be dropped by calling the dropIndex(String indexName) method:
+```java
+embeddingStore.dropIndex(indexName);
+```
 
 For more information about Oracle AI Vector Search refer to the [documentation](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/overview-ai-vector-search.html).
 

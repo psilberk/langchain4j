@@ -94,13 +94,13 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         dataSource = builder.dataSource;
         table = builder.embeddingTable;
         isExactSearch = builder.isExactSearch;
-        metadataKeyMapper = (key, type) ->
-                "JSON_VALUE(" + table.metadataColumn() + ", '$." + key + "' RETURNING " + type.getName() + ")";
-
+        metadataKeyMapper = builder.embeddingTable.metadataKeyMapper();
 
         try {
             table.create(dataSource);
-            createIndex(builder);
+            if (builder.vectorIndexCreateOption != CreateOption.CREATE_NONE) {
+                createDefaultIndex(builder);
+            }
         } catch (SQLException sqlException) {
             throw uncheckSQLException(sqlException);
         }
@@ -115,34 +115,10 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
      *
      * @throws SQLException If a database error prevents the index from being created.
      */
-    private static void createIndex(Builder builder) throws SQLException {
+    private void createDefaultIndex(Builder builder) throws SQLException {
 
-        if (builder.vectorIndexCreateOption == CreateOption.CREATE_NONE)
-            return;
-
-        try (Connection connection = builder.dataSource.getConnection();
-             Statement statement = connection.createStatement()
-        ) {
-            String tableName = builder.embeddingTable.name();
-
-            // If the table name is a quoted identifier, then the index name must also be quoted.
-            String indexName = tableName.startsWith("\"") && tableName.endsWith("\"")
-                    ? "\"" + tableName.substring(1, tableName.length() - 1) + "_embedding_index\""
-                    : tableName + "_embedding_index";
-
-            if (builder.vectorIndexCreateOption == CreateOption.CREATE_OR_REPLACE)
-                statement.addBatch("DROP INDEX IF EXISTS " + indexName);
-
-            // The COSINE metric used here should match the VECTOR_DISTANCE metric of the search method.
-            statement.addBatch("CREATE VECTOR INDEX IF NOT EXISTS " + indexName +
-                        " ON " + tableName + "(" + builder.embeddingTable.embeddingColumn() + ")" +
-                        " ORGANIZATION NEIGHBOR PARTITIONS" +
-                        " WITH DISTANCE COSINE");
-
-            statement.executeBatch();
-        } catch (SQLException sqlException) {
-            throw uncheckSQLException(sqlException);
-        }
+        IVFIndexBuilder defaultIndex = (IVFIndexBuilder)getIndexBuilder(IndexType.IVF_VECTOR_INDEX);
+        createIndex(defaultIndex.createOption(builder.vectorIndexCreateOption).build());
     }
 
     @Override
@@ -532,6 +508,58 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
                         + "\" of class " + value.getClass().getSimpleName());
     }
 
+
+    /**
+     * <p>
+     * Creates a new index described by a {@link TableIndex}. Three builders are available
+     * to create a {@link TableIndex} object: {@link JsonIndexBuilder}, {@link IVFIndexBuilder}
+     * and {@link HNSWIndexBuilder}. A new instance of these builders can be created by calling
+     * {@link #getIndexBuilder(IndexType)} and providing the desired {@link IndexType}.
+     * </p>
+     * @param tableIndex The index description.
+     * @return The name of the index that was create.
+     */
+    public String createIndex(TableIndex tableIndex) {
+        if (tableIndex.getCreateOption() == CreateOption.CREATE_NONE) return null;
+
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()
+        ) {
+            if (tableIndex.getCreateOption() == CreateOption.CREATE_OR_REPLACE) {
+                statement.addBatch(tableIndex.getDropIndexStatement());
+            }
+            statement.addBatch(tableIndex.getCreateIndexStatement());
+            statement.executeBatch();
+            return tableIndex.getIndexName();
+        } catch (SQLException sqlException) {
+            throw uncheckSQLException(sqlException);
+        }
+    }
+
+    /**
+     * Drops an index given its name.
+     * @param indexName The name of the index.
+     */
+    public void dropIndex(String indexName) {
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()
+        ) {
+            statement.execute("DROP INDEX IF EXISTS " + indexName);
+        } catch (SQLException sqlException) {
+            throw uncheckSQLException(sqlException);
+        }
+    }
+
+    /**
+     *
+     * @param indexType
+     * @return
+     */
+    public IndexBuilder getIndexBuilder(IndexType indexType) {
+        return indexType.getBuilder(this.table);
+    }
+
+
     /**
      * Returns a builder which configures and creates instances of {@link OracleEmbeddingStore}.
      *
@@ -551,6 +579,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
         private DataSource dataSource;
         private EmbeddingTable embeddingTable;
         private boolean isExactSearch = false;
+
         private CreateOption vectorIndexCreateOption = CreateOption.CREATE_NONE;
 
         private Builder() {}
@@ -656,6 +685,7 @@ public final class OracleEmbeddingStore implements EmbeddingStore<TextSegment> {
             this.isExactSearch = isExactSearch;
             return this;
         }
+
 
         /**
          * Builds an embedding store with the configuration applied to this builder.
