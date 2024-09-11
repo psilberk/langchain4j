@@ -15,15 +15,17 @@ import static dev.langchain4j.internal.ValidationUtils.*;
  */
 public class IVFIndexBuilder extends IndexBuilder<IVFIndexBuilder> {
 
-    protected int targetAccuracy = -1;
+    private int targetAccuracy = -1;
 
-    protected int degreeOfParallelism = -1;
+    private int degreeOfParallelism = -1;
 
     private int neighborPartitions = -1;
 
     private int samplePerPartition = -1;
 
     private int minVectorsPerPartition = -1;
+
+    IVFIndexBuilder() { }
 
     /**
      * Configures the target accuracy.
@@ -112,14 +114,16 @@ public class IVFIndexBuilder extends IndexBuilder<IVFIndexBuilder> {
     }
 
   /**
-   *
-   * @return
+   * {@inheritDoc}
    */
   @Override
     public Index build() {
       return new Index(this);
     }
 
+  /**
+   * @inheritDoc
+   */
   @Override
   String getCreateIndexStatement(EmbeddingTable embeddingTable) {
 
