@@ -113,7 +113,6 @@ public class IVFIndexBuilder extends IndexBuilder<IVFIndexBuilder> {
       return this;
     }
 
-
   /**
    * {@inheritDoc}
    */
