@@ -30,7 +30,7 @@ public class OracleDocumentLoaderTest {
 
         try {
             Connection conn = DriverManager.getConnection(
-                    dotenv.get("ORACLE_CONNECT_STRING"), dotenv.get("ORACLE_USER"), dotenv.get("ORACLE_PASSWORD"));
+                    dotenv.get("ORACLE_JDBC_URL"), dotenv.get("ORACLE_JDBC_USER"), dotenv.get("ORACLE_JDBC_PASSWORD"));
             loader = new OracleDocumentLoader(conn);
         } catch (SQLException ex) {
             String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
