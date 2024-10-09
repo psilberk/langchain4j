@@ -42,7 +42,7 @@ public class OracleEmbeddingModelTest {
     @Test
     @DisplayName("embed with provider=database")
     void testEmbedONNX() {
-        String pref = "{\"provider\": \"database\", \"model\": \"scott.database\"}";
+        String pref = "{\"provider\": \"database\", \"model\": \"" + dotenv.get("DEMO_ONNX_MODEL") + "\"}";
 
         OracleEmbeddingModel embedder = new OracleEmbeddingModel(conn, pref);
 
