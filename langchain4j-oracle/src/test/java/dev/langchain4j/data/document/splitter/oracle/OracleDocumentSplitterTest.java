@@ -43,7 +43,7 @@ public class OracleDocumentSplitterTest {
     }
 
     @Test
-    @DisplayName("chunk by chars")
+    @DisplayName("split string input by chars")
     void testByChars() {
         String pref = "{\"by\": \"chars\", \"max\": 50}";
         String filename = dotenv.get("DEMO_DS_TEXT_FILE");
@@ -61,7 +61,7 @@ public class OracleDocumentSplitterTest {
     }
 
     @Test
-    @DisplayName("chunk by words")
+    @DisplayName("split string input by words")
     void testByWords() {
         String pref = "{\"by\": \"words\", \"max\": 50}";
         String filename = dotenv.get("DEMO_DS_TEXT_FILE");;
@@ -79,7 +79,7 @@ public class OracleDocumentSplitterTest {
     }
     
     @Test
-    @DisplayName("chunk doc by chars")
+    @DisplayName("split Doc input by chars")
     void testDocByChars() {
         String pref = "{\"by\": \"chars\", \"max\": 50}";
         String filename = dotenv.get("DEMO_DS_TEXT_FILE");
