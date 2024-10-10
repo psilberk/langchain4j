@@ -35,82 +35,6 @@ public class OracleDocumentLoader {
         this.conn = conn;
     }
 
-    private static Metadata getMetadata(String html) {
-        Metadata metadata = new Metadata();
-
-        org.jsoup.nodes.Document doc = Jsoup.parse(html);
-        Elements metaTags = doc.getElementsByTag("meta");
-        for (Element metaTag : metaTags) {
-            String name = metaTag.attr("name");
-            if (name.isEmpty()) {
-                continue;
-            }
-            String content = metaTag.attr("content");
-            metadata.put(name, content);
-        }
-
-        return metadata;
-    }
-
-    public Document loadDocument(String filename, String pref) {
-        Document document = null;
-
-        try {
-            byte[] bytes = Files.readAllBytes(Paths.get(filename));
-
-            String query = "select dbms_vector_chain.utl_to_text(?, json(?)) text, dbms_vector_chain.utl_to_text(?, json('{\"plaintext\": \"false\"}')) metadata from dual";
-
-            PreparedStatement stmt = conn.prepareStatement(query);
-            Blob blob = conn.createBlob();
-            blob.setBytes(1, bytes);
-
-            stmt.setBlob(1, blob);
-            stmt.setObject(2, pref);
-            stmt.setBlob(3, blob);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    String text = rs.getString("text");
-                    String html = rs.getString("metadata");
-
-                    Metadata metadata = getMetadata(html);
-                    document = new Document(text, metadata);
-                }
-            }
-        } catch (IOException | SQLException e) {
-            String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-            log.warn("Failed to load '{}': {}", filename, message);
-        }
-
-        return document;
-    }
-
-    public List<Document> loadDocuments(String owner, String table, String column, String pref) {
-        List<Document> documents = new ArrayList<>();
-
-        String query = String.format("select dbms_vector_chain.utl_to_text(t.%s, json(?)) text, dbms_vector_chain.utl_to_text(t.%s, json('{\"plaintext\": \"false\"}')) metadata from %s.%s t",
-                column, column, owner, table);
-        try {
-            PreparedStatement stmt = conn.prepareStatement(query);
-            stmt.setObject(1, pref);
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    String text = rs.getString("text");
-                    String html = rs.getString("metadata");
-
-                    Metadata metadata = getMetadata(html);
-                    Document doc = new Document(text, metadata);
-                    documents.add(doc);
-                }
-            }
-        } catch (SQLException e) {
-            String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-            log.warn("Failed to load '{}': {}", column, message);
-        }
-
-        return documents;
-    }
-
     public List<Document> loadDocuments(String pref) {
         List<Document> documents = new ArrayList<>();
 
@@ -161,5 +85,84 @@ public class OracleDocumentLoader {
             log.warn("Failed to load '{}': {}", pref, message);
         }
         return documents;
+    }
+
+    private Document loadDocument(String filename, String pref) {
+        Document document = null;
+
+        try {
+            byte[] bytes = Files.readAllBytes(Paths.get(filename));
+
+            String query = "select dbms_vector_chain.utl_to_text(?, json(?)) text, dbms_vector_chain.utl_to_text(?, json('{\"plaintext\": \"false\"}')) metadata from dual";
+
+            PreparedStatement stmt = conn.prepareStatement(query);
+            Blob blob = conn.createBlob();
+            blob.setBytes(1, bytes);
+
+            stmt.setBlob(1, blob);
+            stmt.setObject(2, pref);
+            stmt.setBlob(3, blob);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String text = rs.getString("text");
+                    String html = rs.getString("metadata");
+
+                    Metadata metadata = getMetadata(html);
+                    Path path = Paths.get(filename);
+                    metadata.put(Document.FILE_NAME, path.getFileName().toString());
+                    metadata.put(Document.ABSOLUTE_DIRECTORY_PATH, path.getParent().toString());
+                    document = new Document(text, metadata);
+                }
+            }
+        } catch (IOException | SQLException e) {
+            String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            log.warn("Failed to load '{}': {}", filename, message);
+        }
+
+        return document;
+    }
+
+    private List<Document> loadDocuments(String owner, String table, String column, String pref) {
+        List<Document> documents = new ArrayList<>();
+
+        String query = String.format("select dbms_vector_chain.utl_to_text(t.%s, json(?)) text, dbms_vector_chain.utl_to_text(t.%s, json('{\"plaintext\": \"false\"}')) metadata from %s.%s t",
+                column, column, owner, table);
+        try {
+            PreparedStatement stmt = conn.prepareStatement(query);
+            stmt.setObject(1, pref);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String text = rs.getString("text");
+                    String html = rs.getString("metadata");
+
+                    Metadata metadata = getMetadata(html);
+                    Document doc = new Document(text, metadata);
+                    documents.add(doc);
+                }
+            }
+        } catch (SQLException e) {
+            String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            log.warn("Failed to load '{}': {}", column, message);
+        }
+
+        return documents;
+    }
+
+    private static Metadata getMetadata(String html) {
+        Metadata metadata = new Metadata();
+
+        org.jsoup.nodes.Document doc = Jsoup.parse(html);
+        Elements metaTags = doc.getElementsByTag("meta");
+        for (Element metaTag : metaTags) {
+            String name = metaTag.attr("name");
+            if (name.isEmpty()) {
+                continue;
+            }
+            String content = metaTag.attr("content");
+            metadata.put(name, content);
+        }
+
+        return metadata;
     }
 }
