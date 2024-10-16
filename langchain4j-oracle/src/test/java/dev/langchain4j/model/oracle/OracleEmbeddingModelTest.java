@@ -46,7 +46,7 @@ public class OracleEmbeddingModelTest {
 
         OracleEmbeddingModel embedder = new OracleEmbeddingModel(conn, pref);
 
-        boolean result = embedder.loadOnnxModel(conn, dotenv.get("DEMO_ONNX_DIR"), dotenv.get("DEMO_ONNX_FILE"), dotenv.get("DEMO_ONNX_MODEL"));
+        boolean result = OracleEmbeddingModel.loadOnnxModel(conn, dotenv.get("DEMO_ONNX_DIR"), dotenv.get("DEMO_ONNX_FILE"), dotenv.get("DEMO_ONNX_MODEL"));
         assertThat(result).isEqualTo(true);
 
         Response<Embedding> resp = embedder.embed("hello world");
@@ -91,5 +91,4 @@ public class OracleEmbeddingModelTest {
         Response<List<Embedding>> resp3 = embedder.embedAll(textSegments);
         assertThat(resp3.content().size()).isEqualTo(3);
     }
-
 }
