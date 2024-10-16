@@ -52,7 +52,7 @@ public class OracleDocumentSplitter implements DocumentSplitter {
     /**
      * Splits the provided text into parts.
      * Implementation API.
-     * @param text The text to be split.
+     * @param content The text to be split.
      * @return An array of parts.
      */
     public String[] split(String content) {
