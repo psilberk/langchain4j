@@ -12,12 +12,16 @@ import dev.langchain4j.store.embedding.oracle.OracleEmbeddingStore;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.slf4j.LoggerFactory;
 
 import io.github.cdimascio.dotenv.Dotenv;
@@ -47,7 +51,7 @@ public class OracleIngestTest {
     void testIngest() {
         try {
             String embedderPref = "{\"provider\": \"database\", \"model\": \"" + dotenv.get("DEMO_ONNX_MODEL") + "\"}";
-            String splitterPref = "{\"by\": \"words\", \"max\": 50}";
+            String splitterPref = "{\"by\": \"chars\", \"max\": 50}";
 
             OracleDocumentLoader loader = new OracleDocumentLoader(conn);
             OracleEmbeddingModel embedder = new OracleEmbeddingModel(conn, embedderPref);
@@ -86,22 +90,38 @@ public class OracleIngestTest {
             List<Document> docs = loader.loadDocuments(loaderPref);
 
             EmbeddingStoreIngestor ingestor = EmbeddingStoreIngestor.builder()
-                    // splitting each Document into TextSegments of 1000 tokens each, with a 200-token overlap
                     .documentSplitter(splitter)
                     .embeddingModel(embedder)
                     .embeddingStore(embeddingStore)
                     .build();
             ingestor.ingest(docs);
-            
-            // for debugging. ingest output table should match
+                        
+            /*
+            // for debugging. ingest output should match
             System.out.println("# docs=" + docs.size());
             List<TextSegment> splits = splitter.splitAll(docs);
             System.out.println("# split=" + splits.size());
             Response<List<dev.langchain4j.data.embedding.Embedding>> embeddings = embedder.embedAll(splits);
             System.out.println("# embedded=" + embeddings.content().size());
+            */
+             
+            int count = getCount(tableName);
+            assertThat(count).isGreaterThan(0);
         } catch (SQLException ex) {
             String message = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
             log.error(message);
         }
+    }
+
+    int getCount(String tableName) throws SQLException {
+        int count = 0;
+        String query = "select count(*) from " + tableName;
+        PreparedStatement stmt = conn.prepareStatement(query);
+        try (ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                count = rs.getInt(1);
+            }
+        }
+        return count;
     }
 }
