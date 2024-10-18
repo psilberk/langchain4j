@@ -78,24 +78,26 @@ public class OracleEmbeddingModel extends DimensionAwareEmbeddingModel {
         try {
             if (proxy != null && !proxy.isEmpty()) {
                 String query = "begin utl_http.set_proxy(?); end;";
-                PreparedStatement stmt = conn.prepareStatement(query);
-                stmt.setObject(1, proxy);
-                stmt.execute();
+                try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                    stmt.setObject(1, proxy);
+                    stmt.execute();
+                }
             }
 
             for (String input : inputs) {
                 String query = "select t.column_value as data from dbms_vector_chain.utl_to_embeddings(?, json(?)) t";
-                PreparedStatement stmt = conn.prepareStatement(query);
-                stmt.setObject(1, input);
-                stmt.setObject(2, pref);
-                try (ResultSet rs = stmt.executeQuery()) {
-                    while (rs.next()) {
-                        String text = rs.getString("data");
+                try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                    stmt.setObject(1, input);
+                    stmt.setObject(2, pref);
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        while (rs.next()) {
+                            String text = rs.getString("data");
 
-                        ObjectMapper mapper = new ObjectMapper();
-                        dev.langchain4j.model.oracle.Embedding dbmsEmbedding = mapper.readValue(text, dev.langchain4j.model.oracle.Embedding.class);
-                        Embedding embedding = new Embedding(toFloatArray(dbmsEmbedding.embed_vector));
-                        embeddings.add(embedding);
+                            ObjectMapper mapper = new ObjectMapper();
+                            dev.langchain4j.model.oracle.Embedding dbmsEmbedding = mapper.readValue(text, dev.langchain4j.model.oracle.Embedding.class);
+                            Embedding embedding = new Embedding(toFloatArray(dbmsEmbedding.embed_vector));
+                            embeddings.add(embedding);
+                        }
                     }
                 }
             }

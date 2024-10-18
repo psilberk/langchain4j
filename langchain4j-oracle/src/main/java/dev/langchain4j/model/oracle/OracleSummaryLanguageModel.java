@@ -18,13 +18,13 @@ public class OracleSummaryLanguageModel implements LanguageModel {
     private final Connection conn;
     private final String pref;
     private final String proxy;
-    
+
     public OracleSummaryLanguageModel(Connection conn, String pref) {
         this.conn = conn;
         this.pref = pref;
         this.proxy = "";
     }
-    
+
     public OracleSummaryLanguageModel(Connection conn, String pref, String proxy) {
         this.conn = conn;
         this.pref = pref;
@@ -35,31 +35,33 @@ public class OracleSummaryLanguageModel implements LanguageModel {
     public Response<String> generate(String prompt) {
 
         String text = "";
-        
-        try {              
+
+        try {
             if (proxy != null && !proxy.isEmpty()) {
                 String query = "begin utl_http.set_proxy(?); end;";
-                PreparedStatement stmt = conn.prepareStatement(query);
-                stmt.setObject(1, proxy);
-                stmt.execute();
+                try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                    stmt.setObject(1, proxy);
+                    stmt.execute();
+                }
             }
-            
+
             String query = "select dbms_vector_chain.utl_to_summary(?, json(?)) data from dual";
 
-            PreparedStatement stmt = conn.prepareStatement(query);
-            stmt.setObject(1, prompt);
-            stmt.setObject(2, pref);
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                stmt.setObject(1, prompt);
+                stmt.setObject(2, pref);
 
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    text = rs.getString("data");
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        text = rs.getString("data");
+                    }
                 }
             }
         } catch (SQLException e) {
             String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
             log.warn("Failed to summarize '{}': {}", pref, message);
         }
-        
+
         return Response.from(text);
     }
 }

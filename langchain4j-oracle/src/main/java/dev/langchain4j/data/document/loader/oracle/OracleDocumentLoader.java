@@ -95,24 +95,25 @@ public class OracleDocumentLoader {
 
             String query = "select dbms_vector_chain.utl_to_text(?, json(?)) text, dbms_vector_chain.utl_to_text(?, json('{\"plaintext\": \"false\"}')) metadata from dual";
 
-            PreparedStatement stmt = conn.prepareStatement(query);
-            Blob blob = conn.createBlob();
-            blob.setBytes(1, bytes);
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                Blob blob = conn.createBlob();
+                blob.setBytes(1, bytes);
 
-            stmt.setBlob(1, blob);
-            stmt.setObject(2, pref);
-            stmt.setBlob(3, blob);
+                stmt.setBlob(1, blob);
+                stmt.setObject(2, pref);
+                stmt.setBlob(3, blob);
 
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    String text = rs.getString("text");
-                    String html = rs.getString("metadata");
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        String text = rs.getString("text");
+                        String html = rs.getString("metadata");
 
-                    Metadata metadata = getMetadata(html);
-                    Path path = Paths.get(filename);
-                    metadata.put(Document.FILE_NAME, path.getFileName().toString());
-                    metadata.put(Document.ABSOLUTE_DIRECTORY_PATH, path.getParent().toString());
-                    document = new Document(text, metadata);
+                        Metadata metadata = getMetadata(html);
+                        Path path = Paths.get(filename);
+                        metadata.put(Document.FILE_NAME, path.getFileName().toString());
+                        metadata.put(Document.ABSOLUTE_DIRECTORY_PATH, path.getParent().toString());
+                        document = new Document(text, metadata);
+                    }
                 }
             }
         } catch (IOException | SQLException e) {
@@ -129,16 +130,17 @@ public class OracleDocumentLoader {
         String query = String.format("select dbms_vector_chain.utl_to_text(t.%s, json(?)) text, dbms_vector_chain.utl_to_text(t.%s, json('{\"plaintext\": \"false\"}')) metadata from %s.%s t",
                 column, column, owner, table);
         try {
-            PreparedStatement stmt = conn.prepareStatement(query);
-            stmt.setObject(1, pref);
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    String text = rs.getString("text");
-                    String html = rs.getString("metadata");
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                stmt.setObject(1, pref);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        String text = rs.getString("text");
+                        String html = rs.getString("metadata");
 
-                    Metadata metadata = getMetadata(html);
-                    Document doc = new Document(text, metadata);
-                    documents.add(doc);
+                        Metadata metadata = getMetadata(html);
+                        Document doc = new Document(text, metadata);
+                        documents.add(doc);
+                    }
                 }
             }
         } catch (SQLException e) {
