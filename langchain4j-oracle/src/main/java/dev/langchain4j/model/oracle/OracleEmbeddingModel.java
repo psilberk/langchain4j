@@ -1,13 +1,17 @@
 package dev.langchain4j.model.oracle;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.langchain4j.data.document.splitter.oracle.Chunk;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.DimensionAwareEmbeddingModel;
 import dev.langchain4j.model.output.Response;
 
 import java.io.IOException;
+import java.sql.Array;
+import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,6 +19,8 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import static java.util.stream.Collectors.toList;
+
+import oracle.jdbc.OracleConnection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +32,7 @@ public class OracleEmbeddingModel extends DimensionAwareEmbeddingModel {
     private final Connection conn;
     private final String pref;
     private final String proxy;
+    private boolean batching = true;
 
     public OracleEmbeddingModel(Connection conn, String pref) {
         this.conn = conn;
@@ -39,6 +46,14 @@ public class OracleEmbeddingModel extends DimensionAwareEmbeddingModel {
         this.proxy = proxy;
     }
 
+    void setBatching(boolean batching) {
+        this.batching = batching;
+    }
+    
+    boolean getBatching() {
+        return this.batching;
+    }
+    
     static boolean loadOnnxModel(Connection conn, String dir, String onnxFile, String modelName) {
         boolean result = false;
 
@@ -84,10 +99,33 @@ public class OracleEmbeddingModel extends DimensionAwareEmbeddingModel {
                 }
             }
 
-            for (String input : inputs) {
+            if (!batching) {
+                for (String input : inputs) {
+                    String query = "select t.column_value as data from dbms_vector_chain.utl_to_embeddings(?, json(?)) t";
+                    try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                        stmt.setObject(1, input);
+                        stmt.setObject(2, pref);
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            while (rs.next()) {
+                                String text = rs.getString("data");
+
+                                ObjectMapper mapper = new ObjectMapper();
+                                dev.langchain4j.model.oracle.Embedding dbmsEmbedding = mapper.readValue(text, dev.langchain4j.model.oracle.Embedding.class);
+                                Embedding embedding = new Embedding(toFloatArray(dbmsEmbedding.embed_vector));
+                                embeddings.add(embedding);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // createOracleArray needs to passed a Clob array since vector_array_t is a table of clob
+                // if a String array is passed, will get ORA-17059: Failed to convert to internal representation
+                List<Object> elements = toClobList(conn, inputs);
+                Array arr = ((OracleConnection) conn).createOracleArray("SYS.VECTOR_ARRAY_T", elements.toArray());
+
                 String query = "select t.column_value as data from dbms_vector_chain.utl_to_embeddings(?, json(?)) t";
                 try (PreparedStatement stmt = conn.prepareStatement(query)) {
-                    stmt.setObject(1, input);
+                    stmt.setObject(1, arr);
                     stmt.setObject(2, pref);
                     try (ResultSet rs = stmt.executeQuery()) {
                         while (rs.next()) {
@@ -97,6 +135,7 @@ public class OracleEmbeddingModel extends DimensionAwareEmbeddingModel {
                             dev.langchain4j.model.oracle.Embedding dbmsEmbedding = mapper.readValue(text, dev.langchain4j.model.oracle.Embedding.class);
                             Embedding embedding = new Embedding(toFloatArray(dbmsEmbedding.embed_vector));
                             embeddings.add(embedding);
+
                         }
                     }
                 }
@@ -107,6 +146,24 @@ public class OracleEmbeddingModel extends DimensionAwareEmbeddingModel {
         }
 
         return Response.from(embeddings);
+    }
+
+    private List<Object> toClobList(Connection conn, List<String> inputs) throws JsonProcessingException, SQLException {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        List<Object> chunks = new ArrayList<>();
+        for (int i = 0; i < inputs.size(); i++) {
+            // Create JSON string
+            Chunk chunk = new Chunk();
+            chunk.chunk_id = i;
+            chunk.chunk_data = inputs.get(i);
+            String jsonString = objectMapper.writeValueAsString(chunk);
+
+            Clob clob = conn.createClob();
+            clob.setString(1, jsonString);
+            chunks.add(clob);
+        }
+        return chunks;
     }
 
     private float[] toFloatArray(String embedding) {
