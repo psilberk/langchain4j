@@ -24,10 +24,12 @@ import org.testcontainers.milvus.MilvusContainer;
 @Testcontainers
 class MilvusEmbeddingStoreIT extends EmbeddingStoreWithFilteringIT {
 
+    static final String MILVUS_DOCKER_IMAGE = "milvusdb/milvus:v2.5.10";
+
     private static final String COLLECTION_NAME = "test_collection";
 
     @Container
-    private static final MilvusContainer milvus = new MilvusContainer("milvusdb/milvus:v2.4.20");
+    private static final MilvusContainer milvus = new MilvusContainer(MILVUS_DOCKER_IMAGE);
 
     MilvusEmbeddingStore embeddingStore = MilvusEmbeddingStore.builder()
             .uri(milvus.getEndpoint())
@@ -92,7 +94,7 @@ class MilvusEmbeddingStoreIT extends EmbeddingStoreWithFilteringIT {
     }
 
     @Test
-    void test_milvus_with_existing_client() {
+    void milvus_with_existing_client() {
 
         ConnectParam.Builder connectBuilder = ConnectParam.newBuilder()
                 .withHost(milvus.getHost())

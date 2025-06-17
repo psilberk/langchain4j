@@ -10,6 +10,13 @@ Some LLMs, in addition to generating text, can also trigger actions.
 All LLMs supporting tools can be found [here](/integrations/language-models) (see the "Tools" column).
 :::
 
+:::note
+Not all LLMs support tools equally well.
+The ability to understand, select, and correctly use tools depends heavily on the specific model and its capabilities.
+Some models may not support tools at all, while others might require careful prompt engineering 
+or additional system instructions.
+:::
+
 There is a concept known as "tools," or "function calling".
 It allows the LLM to call, when necessary, one or more available tools, usually defined by the developer.
 A tool can be anything: a web search, a call to an external API, or the execution of a specific piece of code, etc.
@@ -122,13 +129,15 @@ Please note that tools/function calling is not the same as [JSON mode](/tutorial
 # 2 levels of abstraction
 
 LangChain4j provides two levels of abstraction for using tools:
-- Low-level, using the `ChatLanguageModel` and `ToolSpecification` APIs
+- Low-level, using the `ChatModel` and `ToolSpecification` APIs
 - High-level, using [AI Services](/tutorials/ai-services) and `@Tool`-annotated Java methods
 
 ## Low Level Tool API
 
-At the low level, you can use the `generate(List<ChatMessage>, List<ToolSpecification>)` method
-of the `ChatLanguageModel`. A similar method is also present in the `StreamingChatLanguageModel`.
+At the low level, you can use the `chat(ChatRequest)` method
+of the `ChatModel`. A similar method is also present in the `StreamingChatModel`.
+
+You can specify one or more `ToolSpecification`s when creating the `ChatRequest`.
 
 `ToolSpecification` is an object that contains all the information about the tool:
 - The `name` of the tool
@@ -177,9 +186,12 @@ List<ToolSpecification> toolSpecifications = ToolSpecifications.toolSpecificatio
 
 Once you have a `List<ToolSpecification>`, you can call the model:
 ```java
-UserMessage userMessage = UserMessage.from("What will the weather be like in London tomorrow?");
-Response<AiMessage> response = model.generate(List.of(userMessage), toolSpecifications);
-AiMessage aiMessage = response.content();
+ChatRequest request = ChatRequest.builder()
+    .messages(UserMessage.from("What will the weather be like in London tomorrow?"))
+    .toolSpecifications(toolSpecifications)
+    .build();
+ChatResponse response = model.chat(request);
+AiMessage aiMessage = response.aiMessage();
 ```
 
 If the LLM decides to call the tool, the returned `AiMessage` will contain data
@@ -199,10 +211,14 @@ If you want to send the result of the tool execution back to the LLM,
 you need to create a `ToolExecutionResultMessage` (one for each `ToolExecutionRequest`)
 and send it along with all previous messages:
 ```java
+
 String result = "It is expected to rain in London tomorrow.";
 ToolExecutionResultMessage toolExecutionResultMessage = ToolExecutionResultMessage.from(toolExecutionRequest, result);
-List<ChatMessage> messages = List.of(userMessage, aiMessage, toolExecutionResultMessage);
-Response<AiMessage> response2 = model.generate(messages, toolSpecifications);
+ChatRequest request2 = ChatRequest.builder()
+        .messages(List.of(userMessage, aiMessage, toolExecutionResultMessage))
+        .toolSpecifications(toolSpecifications)
+        .build();
+ChatResponse response2 = model.chat(request2);
 ```
 
 ## High Level Tool API
@@ -245,10 +261,33 @@ Methods annotated with `@Tool` can accept any number of parameters of various ty
 
 Methods without parameters are supported as well.
 
-By default, all method parameters are considered mandatory/required.
+#### Required and Optional
+
+By default, all tool method parameters are considered **_required_**.
 This means that the LLM will have to produce a value for such a parameter.
-A parameter can be made optional by annotating it with `@P(required = false)`.
-Declaring fields of POJO parameters as optional is not supported yet.
+A parameter can be made optional by annotating it with `@P(required = false)`:
+```java
+@Tool
+void getTemperature(String location, @P(value = "Unit of temperature", required = false) Unit unit) {
+    ...
+}
+```
+
+Fields and sub-fields of complex parameters are also considered **_required_** by default.
+You can make a field optional by annotating it with `@JsonProperty(required = false)`:
+```java
+record User(String name, @JsonProperty(required = false) String email) {}
+
+@Tool
+void add(User user) {
+    ...
+}
+```
+
+:::note
+Please note that when used with [structured outputs](/tutorials/structured-outputs),
+all fields and sub-fields are considered **_optional_** by default.
+:::
 
 Recursive parameters (e.g., a `Person` class having a `Set<Person> children` field)
 are currently supported only by OpenAI.
@@ -260,6 +299,85 @@ If the method has a `void` return type, "Success" string is sent to the LLM if t
 If the method has a `String` return type, the returned value is sent to the LLM as is, without any conversions.
 
 For other return types, the returned value is converted into a JSON string before being sent to the LLM.
+
+### AI services as tools for other AI services
+
+AI services can also be used as tools for other AI services. This can be useful in many agentic use cases, where one AI service can ask the help of another, more specialized, AI service to perform a specific task. For instance, having defined the following AI services:
+
+```java
+    interface RouterAgent {
+
+        @dev.langchain4j.service.UserMessage("""
+            Analyze the following user request and categorize it as 'legal', 'medical' or 'technical',
+            then forward the request as it is to the corresponding expert provided as a tool.
+            Finally return the answer that you received from the expert without any modification.
+
+            The user request is: '{{it}}'.
+            """)
+        String askToExpert(String request);
+    }
+
+    interface MedicalExpert {
+
+        @dev.langchain4j.service.UserMessage("""
+            You are a medical expert.
+            Analyze the following user request under a medical point of view and provide the best possible answer.
+            The user request is {{it}}.
+            """)
+        @Tool("A medical expert")
+        String medicalRequest(String request);
+    }
+
+    interface LegalExpert {
+
+        @dev.langchain4j.service.UserMessage("""
+            You are a legal expert.
+            Analyze the following user request under a legal point of view and provide the best possible answer.
+            The user request is {{it}}.
+            """)
+        @Tool("A legal expert")
+        String legalRequest(String request);
+    }
+
+    interface TechnicalExpert {
+
+        @dev.langchain4j.service.UserMessage("""
+            You are a technical expert.
+            Analyze the following user request under a technical point of view and provide the best possible answer.
+            The user request is {{it}}.
+            """)
+        @Tool("A technical expert")
+        String technicalRequest(String request);
+    }
+```
+
+The `RouterAgent` can be configured to use as tools the 3 other AI services, experts in specific fields, routing the user request to one of them.
+
+```java
+MedicalExpert medicalExpert = AiServices.builder(MedicalExpert.class)
+        .chatModel(model)
+        .build();
+LegalExpert legalExpert = AiServices.builder(LegalExpert.class)
+        .chatModel(model)
+        .build();
+TechnicalExpert technicalExpert = AiServices.builder(TechnicalExpert.class)
+        .chatModel(model)
+        .build();
+
+RouterAgent routerAgent = AiServices.builder(RouterAgent.class)
+        .chatModel(model)
+        .tools(medicalExpert, legalExpert, technicalExpert)
+        .build();
+
+routerAgent.askToExpert("I broke my leg what should I do");
+```
+
+:::note
+Using AI services as tools for other AI services is a powerful feature that enables to build complex agentic systems. However, this approach also comes with a few relevant drawbacks that are important to be aware of:
+- This implementation requires the LLM to copy-paste the user request without modifications as a tool call and this could be an error-prone operation.
+- The LLM calling the other LLM as a tool has to reprocess its response, as it happens for any other tool invocation, and this could be a wasteful computation in terms of both time and consumed tokens.
+- The agent-tool, being a totally separated AI service, has no access to the chat memory of the agent calling it, so it cannot use the chat memory to provide a more informed answer.
+:::
 
 ### Exception Handling
 If a method annotated with `@Tool` throws an `Exception`,
@@ -289,7 +407,7 @@ class Calculator {
 }
 
 MathGenius mathGenius = AiServices.builder(MathGenius.class)
-    .chatLanguageModel(model)
+    .chatModel(model)
     .tools(new Calculator())
     .build();
 
@@ -337,6 +455,24 @@ Result executeQuery(Query query) {
 }
 ```
 
+:::note
+Please note that `@Description` placed on an `enum` value has **_no effect_** and **_is not_** included
+in the generated JSON schema:
+```java
+enum Priority {
+
+    @Description("Critical issues such as payment gateway failures or security breaches.") // this is ignored
+    CRITICAL,
+    
+    @Description("High-priority issues like major feature malfunctions or widespread outages.") // this is ignored
+    HIGH,
+    
+    @Description("Low-priority issues such as minor bugs or cosmetic problems.") // this is ignored
+    LOW
+}
+```
+:::
+
 ### `@ToolMemoryId`
 If your AI Service method has a parameter annotated with `@MemoryId`,
 you can also annotate a parameter of a `@Tool` method with `@ToolMemoryId`.
@@ -369,9 +505,9 @@ interface Assistant {
 TokenStream tokenStream = assistant.chat("Cancel my booking");
 
 tokenStream
-    .onNext(...)
     .onToolExecuted((ToolExecution toolExecution) -> System.out.println(toolExecution))
-    .onComplete(...)
+    .onPartialResponse(...)
+    .onCompleteResponse(...)
     .onError(...)
     .start();
 ```
@@ -413,7 +549,7 @@ Once we have one or multiple (`ToolSpecification`, `ToolExecutor`) pairs,
 we can specify them when creating an AI Service:
 ```java
 Assistant assistant = AiServices.builder(Assistant.class)
-    .chatLanguageModel(chatLanguageModel)
+    .chatModel(chatModel)
     .tools(Map.of(toolSpecification, toolExecutor))
     .build();
 ```
@@ -446,10 +582,32 @@ ToolProvider toolProvider = (toolProviderRequest) -> {
 };
 
 Assistant assistant = AiServices.builder(Assistant.class)
-    .chatLanguageModel(model)
+    .chatModel(model)
     .toolProvider(toolProvider)
     .build();
 ```
+
+It is possible for an AI service to use both programmatically and dynamically specified tools in the same invocation.
+
+### Tools Hallucination Strategy
+
+It may happen that an LLM hallucinates on tools invocation, or in other words that it asks to use a tool with a name that doesn't exist. In this case by default LangChain4j will throw an exception reporting the problem, but it is possible to configure a different behavior providing the AI service with a strategy to be used in this situation. 
+
+This strategy is an implementation of a `Function<ToolExecutionRequest, ToolExecutionResultMessage>` defining which `ToolExecutionResultMessage` should be produced as the result for a `ToolExecutionRequest` containing the request to invoke a tool that is not available. For instance, it could be possible to configure the AI service with a strategy that returns to the LLM a response that hopefully will push it to retry a different tool invocation, knowing that the formerly required tool doesn't exist, as in the following example:
+
+```java
+AssistantHallucinatedTool assistant = AiServices.builder(AssistantHallucinatedTool.class)
+        .chatModel(chatModel)
+        .tools(new HelloWorld())
+        .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
+                toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()))
+        .build();
+```
+
+## Model Context Protocol (MCP)
+
+You can also import [tools from MCP server](https://modelcontextprotocol.io/docs/concepts/tools).
+More information on this can be found [here](/tutorials/mcp/#creating-an-mcp-tool-provider).
 
 ## Related Tutorials
 
