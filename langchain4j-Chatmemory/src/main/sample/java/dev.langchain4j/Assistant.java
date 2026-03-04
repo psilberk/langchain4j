@@ -1,5 +1,4 @@
-package org.example;
-
+package dev.langchain4j;
 import dev.langchain4j.service.SystemMessage;
 
 public interface Assistant {

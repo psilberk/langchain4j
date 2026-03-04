@@ -1,23 +1,24 @@
-package org.example;
+package dev.langchain4j;
 
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageDeserializer;
 import dev.langchain4j.data.message.ChatMessageSerializer;
-import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
-import oracle.jdbc.pool.OracleDataSource;
 
 import javax.sql.DataSource;
 import java.sql.*;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-
-public class Chatmemorystore implements ChatMemoryStore {
+/*
+ * This class stores, retrieves, updates, and deletes user and system messages
+ * it implements ChatMemoryStore, which provides methods such as getMessages(),
+ * updateMessages(), and deleteMessages().
+ */
+public class OracleMemoryStore implements ChatMemoryStore {
     private final DataSource oracleDataSource;
     private final Duration ttl;
-    public Chatmemorystore(Duration ttl) throws SQLException {
+    public OracleMemoryStore(Duration ttl) throws SQLException {
         this.ttl = ttl;
         this.oracleDataSource=OracleWalletDataSourceFactory.createconnection();
 
@@ -25,19 +26,17 @@ public class Chatmemorystore implements ChatMemoryStore {
 
 /* get messages from database , each memoryId has multiple text the store
 in json format (eg : memoryId : 1 ,memoryJson:[
-  {
-
-    "text": "You are a helpful assistant."
-  },
-  {
-
-    "text": "Hi, can you help me with my order?"
-  },
-  {
-
-    "text": "Sure—what’s your order number?"
-  }
-])
+{
+"text":"Hey user how can i help you",
+"type":"SYSTEM"
+},
+{
+"contents":[
+{
+"text":"hey System","type":"TEXT"}
+],
+"type":"USER"}]
+)
 using expires_at to remove all data that could be not use again
  */
     @Override
@@ -63,6 +62,13 @@ using expires_at to remove all data that could be not use again
     }
 
     }
+    /*
+     * This method updates the stored content list for a memory.
+     *
+     * it uses Oracle DB MERGE syntax (an “upsert” operation): if the memory record
+     * already exists it updates the json content; otherwise, it creates a new record
+     * and inserts the content.
+     */
 
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
@@ -94,11 +100,13 @@ using expires_at to remove all data that could be not use again
         }
 
     }
-
+    /*
+     * Deletes stored chat memory when the conversation has expired.
+     */
     @Override
     public void deleteMessages(Object memoryId) {
         String id=memoryidtostring(memoryId);
-        String sql="Delete from chat_memory where memory_id=?";
+        String sql="Delete from chat_memory where memory_id=? and (expires_at is not null and expires_at<SYSTIMESTAMP) ";
         try(Connection con=oracleDataSource.getConnection()){
             PreparedStatement pr= con.prepareStatement(sql);
             pr.setString(1,id);
@@ -109,10 +117,18 @@ using expires_at to remove all data that could be not use again
 
 
     }
+    /*
+     * Sets the expiration date.
+     * If no expiration is required set ttl to null
+     * or to a value less than or equal to 0.
+     */
     public Timestamp computeExperationat(){
         if(ttl==null || ttl.isZero() || ttl.isNegative())return null;
         return Timestamp.from(java.time.Instant.now().plus(ttl));
     }
+    /*
+     * Converts the memoryId object to a String so it can be stored in the Oracle Database.
+     */
     public String memoryidtostring(Object memoryId){
         if(memoryId==null || memoryId.toString().trim().isEmpty()){
             throw new OracleChatMemoryStoreException("No memoryId found");

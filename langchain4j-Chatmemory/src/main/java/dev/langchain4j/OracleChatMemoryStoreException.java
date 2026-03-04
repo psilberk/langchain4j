@@ -1,7 +1,10 @@
-package org.example;
+package dev.langchain4j;
 
 import java.sql.SQLException;
-
+/*
+ * OracleChatMemoryStore Exceptions
+ *
+ */
 public class OracleChatMemoryStoreException extends RuntimeException{
     public OracleChatMemoryStoreException(String exception){
         super(exception);

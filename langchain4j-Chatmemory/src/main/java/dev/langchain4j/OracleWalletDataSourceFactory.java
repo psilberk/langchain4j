@@ -1,4 +1,4 @@
-package org.example;
+package dev.langchain4j;
 
 import oracle.jdbc.pool.OracleDataSource;
 import oracle.ucp.jdbc.PoolDataSource;
@@ -6,7 +6,9 @@ import oracle.ucp.jdbc.PoolDataSourceFactory;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
-
+/*
+Connect to Oracle DB
+ */
 public class OracleWalletDataSourceFactory {
     public static DataSource createconnection() throws SQLException {
         PoolDataSource pool= PoolDataSourceFactory.getPoolDataSource();
