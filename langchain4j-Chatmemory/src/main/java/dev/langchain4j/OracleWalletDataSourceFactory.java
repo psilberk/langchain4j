@@ -10,15 +10,13 @@ import java.sql.SQLException;
 Connect to Oracle DB
  */
 public class OracleWalletDataSourceFactory {
-    public static DataSource createconnection() throws SQLException {
-        PoolDataSource pool= PoolDataSourceFactory.getPoolDataSource();
-        pool.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
-        pool.setURL(System.getenv("url"));
-        pool.setUser(System.getenv("user"));
-        pool.setPassword(System.getenv("password"));
-        pool.setInitialPoolSize(1);
-        pool.setMinPoolSize(1);
-        pool.setMaxPoolSize(10);
-        return pool;
+    public static OracleDataSource createconnection() throws SQLException {
+      OracleDataSource oracleDataSource=new OracleDataSource();
+
+        oracleDataSource.setURL(System.getenv("url"));
+        oracleDataSource.setUser(System.getenv("user"));
+        oracleDataSource.setPassword(System.getenv("password"));
+
+        return oracleDataSource;
     }
 }
