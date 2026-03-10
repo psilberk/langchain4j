@@ -167,7 +167,7 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
 @Test
 void getMessages_should_throw_exception_when_memoryId_null() {
     assertThatThrownBy(() -> oracleMemoryStore.getMessages(null))
-            .isInstanceOf(OracleChatMemoryStoreException.class)
+            .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("memoryId cannot be null or empty");
 }
 
@@ -176,7 +176,7 @@ void getMessages_should_throw_exception_when_memoryId_null() {
 @Test
 void getMessages_should_throw_exception_when_memoryId_empty() {
     assertThatThrownBy(() -> oracleMemoryStore.getMessages("   "))
-            .isInstanceOf(OracleChatMemoryStoreException.class)
+            .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("memoryId cannot be null or empty");
 }
 // Verifies input validation: updateMessages rejects null messages and throws OracleChatMemoryStoreException
@@ -184,7 +184,7 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
     @Test
     void updateMessages_should_throw_exception_when_messages_null() {
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages(userId, null))
-                .isExactlyInstanceOf(OracleChatMemoryStoreException.class)
+                .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("messages cannot be null or empty");
     }
 
@@ -194,7 +194,7 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
     void updateMessages_should_throw_exception_when_messages_empty() {
         List<ChatMessage> chatMessages = new ArrayList<>();
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages(userId, chatMessages))
-                .isExactlyInstanceOf(OracleChatMemoryStoreException.class)
+                .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("messages cannot be null or empty");
     }
 
@@ -205,7 +205,7 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
         List<ChatMessage> chatMessages = new ArrayList<>();
         chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages(null, chatMessages))
-                .isExactlyInstanceOf(OracleChatMemoryStoreException.class)
+                .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("memoryId cannot be null or empty");
     }
 
@@ -216,7 +216,7 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
         List<ChatMessage> chatMessages = new ArrayList<>();
         chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages("   ", chatMessages))
-                .isExactlyInstanceOf(OracleChatMemoryStoreException.class)
+                .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("memoryId cannot be null or empty");
     }
 
@@ -225,7 +225,7 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
     @Test
     void deleteMessages_should_throw_exception_when_memoryId_null() {
         assertThatThrownBy(() -> oracleMemoryStore.deleteMessages(null))
-                .isExactlyInstanceOf(OracleChatMemoryStoreException.class)
+                .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("memoryId cannot be null or empty");
     }
 
@@ -234,7 +234,7 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
     @Test
     void deleteMessages_should_throw_exception_when_memoryId_empty() {
         assertThatThrownBy(() -> oracleMemoryStore.deleteMessages("   "))
-                .isExactlyInstanceOf(OracleChatMemoryStoreException.class)
+                .isExactlyInstanceOf(IllegalArgumentException.class)
                 .hasMessage("memoryId cannot be null or empty");
     }
 

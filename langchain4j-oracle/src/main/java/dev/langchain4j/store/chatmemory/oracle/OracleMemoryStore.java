@@ -80,7 +80,7 @@ using expires_at to remove all data that could be not use again
         }
 
     } catch (SQLException e) {
-        throw new OracleChatMemoryStoreException("Failed to load Memoryid"+memoryId);
+        throw new RuntimeException("Failed to load Memoryid"+memoryId,e);
     }
 
     }
@@ -99,7 +99,7 @@ using expires_at to remove all data that could be not use again
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
         if(messages==null || messages.isEmpty()){
-            throw new OracleChatMemoryStoreException("messages cannot be null or empty");
+            throw new IllegalArgumentException("messages cannot be null or empty");
         }
 
         String id= memoryidtostring(memoryId);
@@ -127,7 +127,7 @@ using expires_at to remove all data that could be not use again
             pr.executeUpdate();
 
         } catch (SQLException e) {
-            throw new OracleChatMemoryStoreException("Failed to update messages for memoryId=" + id, e);
+            throw new RuntimeException("Failed to update messages for memoryId=" + id, e);
         }
 
     }
@@ -145,7 +145,7 @@ using expires_at to remove all data that could be not use again
             pr.setString(1,id);
             pr.executeUpdate();
         } catch (SQLException e) {
-            throw new OracleChatMemoryStoreException("Failed to delete messages for memoryId=" + id, e);
+            throw new RuntimeException("Failed to delete messages for memoryId=" + id, e);
         }
 
 
@@ -170,7 +170,7 @@ using expires_at to remove all data that could be not use again
      */
     public String memoryidtostring(Object memoryId){
         if(memoryId==null || memoryId.toString().trim().isEmpty()){
-            throw new OracleChatMemoryStoreException("memoryId cannot be null or empty");
+            throw new IllegalArgumentException("memoryId cannot be null or empty");
         }
         return memoryId.toString();
     }

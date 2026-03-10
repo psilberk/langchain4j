@@ -82,7 +82,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
             }
 
         } catch (SQLException e) {
-            throw new OracleChatMemoryStoreException("Failed to load Memoryid"+memoryId);
+            throw new RuntimeException("Failed to load Memoryid"+memoryId,e);
         }
 
     }
@@ -101,7 +101,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
         if(messages==null || messages.isEmpty()){
-            throw new OracleChatMemoryStoreException("messages cannot be null or empty");
+            throw new IllegalStateException("messages cannot be null or empty");
         }
 
         String id= memoryidtostring(memoryId);
@@ -129,7 +129,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
             pr.executeUpdate();
 
         } catch (SQLException e) {
-            throw new OracleChatMemoryStoreException("Failed to update messages for memoryId=" + id, e);
+            throw new RuntimeException("Failed to update messages for memoryId=" + id, e);
         }
 
     }
@@ -147,7 +147,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
             pr.setString(1,id);
             pr.executeUpdate();
         } catch (SQLException e) {
-            throw new OracleChatMemoryStoreException("Failed to delete messages for memoryId=" + id, e);
+            throw new RuntimeException("Failed to delete messages for memoryId=" + id, e);
         }
 
 
@@ -172,7 +172,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
      */
     public String memoryidtostring(Object memoryId){
         if(memoryId==null || memoryId.toString().trim().isEmpty()){
-            throw new OracleChatMemoryStoreException("memoryId cannot be null or empty");
+            throw new IllegalStateException("memoryId cannot be null or empty");
         }
         return memoryId.toString();
     }
