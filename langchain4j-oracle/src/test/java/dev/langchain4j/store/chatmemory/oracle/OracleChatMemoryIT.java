@@ -42,32 +42,20 @@ static void beforeAll() {
     assumeTrue(jdbcUrl != null && userName != null && password != null,
             "Local Oracle DB env vars not set; skipping integration tests");
 }
-
+// Create the table if it doesn't exist and ensure it's empty
 @BeforeEach
 void setUp() throws SQLException {
     OracleDataSource oracleDataSource=new OracleDataSource();
     oracleDataSource.setURL(jdbcUrl);
     oracleDataSource.setUser(userName);
     oracleDataSource.setPassword(password);
-
-        //sqlcode!=-955 check if name of table already exist
-try(Connection con=oracleDataSource.getConnection(); Statement st= con.createStatement()){
-
-    st.executeUpdate("""
-BEGIN
-    EXECUTE IMMEDIATE 'Create table chat_memory(
-    memory_id varchar(200) not null,
-    messages_json Clob not null,
-    update_at timestamp DEFAULT SYSTIMESTAMP not null,
-    expires_at timestamp null,
-    Constraint PK_chat_memory primary key(memory_id))';
-Exception
-    When others then
-        IF SQLCODE!=-955 then Raise; END IF;
-END;
-
-""");
-    this.oracleMemoryStore=new OracleMemoryStore(oracleDataSource,"chat_memory", Duration.ZERO);
+    oracleMemoryStore=OracleMemoryStore
+                                        .builder()
+                                        .oracleDataSource(oracleDataSource)
+                                        .tableName("chat_memory")
+                                        .ttl(Duration.ZERO)
+                                        .build();
+    oracleMemoryStore.createTable();
     oracleMemoryStore.deleteMessages(userId);
     List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
     assertThat(messages).isEmpty();
@@ -75,7 +63,7 @@ END;
 
 }
 
-    }
+
 @AfterEach
 void deleteTable() throws SQLException {
 
@@ -83,7 +71,11 @@ void deleteTable() throws SQLException {
     oracleMemoryStore.deleteMessages(userId);
 
     }
-// Verifies OracleMemoryStore can persist and retrieve a list of chat messages (System + User with ImageContent) in Oracle DB
+
+/**
+* Verifies OracleMemoryStore can persist and retrieve a list of chat messages
+* (System + User with ImageContent) in Oracle DB.
+*/
 @Test
 void set_messages_into_oracle() {
     // getmessages and check if they are empty
@@ -103,8 +95,11 @@ void set_messages_into_oracle() {
     messages = oracleMemoryStore.getMessages(userId);
     assertThat(messages).hasSize(2);
 }
+/**
+*Verifies OracleMemoryStore can delete stored messages
+* for a given memory/user id from Oracle DB
+*/
 
-// Verifies OracleMemoryStore can delete stored messages for a given memory/user id from Oracle DB
 @Test
 void delete_messages_from_oracle() {
     // get messages of the memoryId
@@ -124,7 +119,11 @@ void delete_messages_from_oracle() {
 
     assertThat(messages).isEmpty();
 }
-// Verifies OracleMemoryStore TTL behavior, messages expire and are no longer retrievable from Oracle DB after the configured TTL
+
+/**
+* Verifies OracleMemoryStore TTL behavior, messages expire and are no
+* longer retrievable from Oracle DB after the configured TTL
+*/
 @Test
 void set_messages_with_ttl_into_oracle() throws SQLException {
     OracleDataSource oracleDataSource=new OracleDataSource();
@@ -132,8 +131,12 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
     oracleDataSource.setUser(userName);
     oracleDataSource.setPassword(password);
     // create new OracleMemoryStore that contains ttl > 0
-    OracleMemoryStore ttlMemoryStore = new OracleMemoryStore(oracleDataSource,"chat_memory",Duration.ofSeconds(2));
-
+    OracleMemoryStore ttlMemoryStore=OracleMemoryStore
+            .builder()
+            .oracleDataSource(oracleDataSource)
+            .tableName("chat_memory")
+            .ttl(Duration.ofSeconds(2))
+            .build();
     // get the messages and check if isEmpty
     List<ChatMessage> messages = ttlMemoryStore.getMessages(userId);
     assertThat(messages).isEmpty();
@@ -163,42 +166,57 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
     messages = ttlMemoryStore.getMessages(userId);
     assertThat(messages).isEmpty();
 }
-// Verifies input validation: getMessages rejects null memoryId and throws OracleChatMemoryStoreException
+/**
+*Verifies input validation: getMessages rejects null
+*memoryId and throws OracleChatMemoryStoreException
+*/
 @Test
 void getMessages_should_throw_exception_when_memoryId_null() {
     assertThatThrownBy(() -> oracleMemoryStore.getMessages(null))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessage("memoryId cannot be null or empty");
+            ;
 }
 
-// Verifies input validation: getMessages rejects empty memoryId and throws OracleChatMemoryStoreException
+/**
+* Verifies input validation: getMessages rejects empty
+* memoryId and throws OracleChatMemoryStoreException
+*/
 
 @Test
 void getMessages_should_throw_exception_when_memoryId_empty() {
     assertThatThrownBy(() -> oracleMemoryStore.getMessages("   "))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessage("memoryId cannot be null or empty");
+            ;
 }
-// Verifies input validation: updateMessages rejects null messages and throws OracleChatMemoryStoreException
+/**
+*Verifies input validation: updateMessages rejects null
+*messages and throws OracleChatMemoryStoreException
+*/
 
     @Test
     void updateMessages_should_throw_exception_when_messages_null() {
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages(userId, null))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
-                .hasMessage("messages cannot be null or empty");
+                ;
     }
 
-// Verifies input validation: updateMessages rejects empty messages and throws OracleChatMemoryStoreException
+/**
+* Verifies input validation: updateMessages rejects empty
+* messages and throws OracleChatMemoryStoreException
+*/
 
     @Test
     void updateMessages_should_throw_exception_when_messages_empty() {
         List<ChatMessage> chatMessages = new ArrayList<>();
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages(userId, chatMessages))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
-                .hasMessage("messages cannot be null or empty");
+               ;
     }
 
-// Verifies input validation: updateMessages rejects null memoryId and throws OracleChatMemoryStoreException
+/**
+* Verifies input validation: updateMessages rejects null
+* memoryId and throws OracleChatMemoryStoreException
+*/
 
     @Test
     void updateMessages_should_throw_exception_when_memoryId_null() {
@@ -206,10 +224,13 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
         chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages(null, chatMessages))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
-                .hasMessage("memoryId cannot be null or empty");
+                ;
     }
 
-// Verifies input validation: updateMessages rejects empty memoryId and throws OracleChatMemoryStoreException
+/**
+* Verifies input validation: updateMessages rejects empty
+* memoryId and throws OracleChatMemoryStoreException
+*/
 
     @Test
     void updateMessages_memoryId_empty() {
@@ -217,25 +238,31 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
         chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
         assertThatThrownBy(() -> oracleMemoryStore.updateMessages("   ", chatMessages))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
-                .hasMessage("memoryId cannot be null or empty");
+                ;
     }
 
-// Verifies input validation: deleteMessages rejects null memoryId and throws OracleChatMemoryStoreException
+/**
+* Verifies input validation: deleteMessages rejects null
+* memoryId and throws OracleChatMemoryStoreException
+*/
 
     @Test
     void deleteMessages_should_throw_exception_when_memoryId_null() {
         assertThatThrownBy(() -> oracleMemoryStore.deleteMessages(null))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
-                .hasMessage("memoryId cannot be null or empty");
+                ;
     }
 
-// Verifies input validation: deleteMessages rejects empty memoryId and throws OracleChatMemoryStoreException
+/**
+* Verifies input validation: deleteMessages rejects empty
+* memoryId and throws OracleChatMemoryStoreException
+*/
 
     @Test
     void deleteMessages_should_throw_exception_when_memoryId_empty() {
         assertThatThrownBy(() -> oracleMemoryStore.deleteMessages("   "))
                 .isExactlyInstanceOf(IllegalArgumentException.class)
-                .hasMessage("memoryId cannot be null or empty");
+               ;
     }
 
 

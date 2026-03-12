@@ -29,11 +29,11 @@ public class Main {
 
         // Create a memory store backed by Oracle DB using wallet-based datasource/connection
 
-        OracleMemoryStore memorystore = new OracleMemoryStore(
-                OracleWalletDataSourceFactory.createconnection(),
-                "chat_memory",
-                Duration.ofHours(1)
-        );
+        OracleMemoryStore memorystore = OracleMemoryStore.builder()
+                .oracleDataSource(OracleWalletDataSourceFactory.createconnection())
+                .tableName("chat_memory")
+                .ttl(Duration.ofHours(1))
+                .build();
 
         // A stable identifier for the conversation session/user.
 
