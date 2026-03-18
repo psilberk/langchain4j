@@ -1,6 +1,7 @@
 package dev.langchain4j.store.chatmemory.oracle;
 
 import javax.sql.DataSource;
+import java.sql.BatchUpdateException;
 import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -12,15 +13,20 @@ import java.sql.Types;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
+
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageDeserializer;
 import dev.langchain4j.data.message.ChatMessageSerializer;
+
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
-import oracle.jdbc.OraclePreparedStatement;
+
 import oracle.jdbc.OracleStatement;
+
 import oracle.jdbc.OracleTypes;
 import oracle.jdbc.pool.OracleDataSource;
+import oracle.sql.json.OracleJsonArray;
+import oracle.sql.json.OracleJsonValue;
+
 
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
 
@@ -48,19 +54,23 @@ public class OracleMemoryStore implements ChatMemoryStore {
     private final Duration ttl;
     private final String tableName;
     /**
-     * Constructs a new Oracle chat memory store with TTL .
+     * Constructs Oracle Memory Store configured by a builder.
      *
-     * @param oracleDataSource      used to obtain database connections
-     * @param tableName             name of the database table used to persist chat memory.
-     * @param ttl                   time-to-live in days ,weeks, months
-     *
+     * @param builder Builder that configures the Oracle Memory Store. Not null.
+     * @throws IllegalArgumentException If the configuration is not valid.
+     * @implNote This constructor does not perform null checks. Validation should occur in {@link OracleMemoryStore.Builder#build()},
+     * before calling this constructor.
      */
-    public OracleMemoryStore(OracleDataSource oracleDataSource,String tableName,Duration ttl) throws SQLException {
+    private OracleMemoryStore(Builder builder) throws SQLException {
 
-        this.oracleDataSource= ensureNotNull(oracleDataSource , "oracleDataSource");
-        this.tableName=ensureNotNull(tableName,"tablename");
-        this.ttl = ttl;
-
+        this.oracleDataSource= builder.oracleDataSource;
+        this.tableName=builder.tableName;
+        this.ttl = builder.ttl;
+        try {
+            createTable();
+        } catch (SQLException sqlException) {
+            throw new RuntimeException(sqlException);
+        }
     }
     /**
      * Creates the chat memory table if it does not already exist.
@@ -74,33 +84,27 @@ public class OracleMemoryStore implements ChatMemoryStore {
      * <ul>
      *   <li>{@code memory_id} - Chat session identifier. Required (NOT NULL). Primary key.</li>
      *   <li>{@code messages_json} - Messages payload serialized as JSON. Required (NOT NULL).</li>
-     *   <li>{@code updated_at} - Last update timestamp. NOT NULL. Defaults to {@code SYSTIMESTAMP}.</li>
      *   <li>{@code expires_at} - Optional expiration timestamp. NULL means no expiration.</li>
      * </ul>
      * <p>
-     * If the table already exists, Oracle raises ORA-00955; this error is ignored.
-     */
-    public void createTable() throws SQLException {
-        try(Connection con=oracleDataSource.getConnection(); Statement create= con.createStatement()){
-            create.executeUpdate( "BEGIN\n"
-                    + "  EXECUTE IMMEDIATE 'CREATE TABLE " + tableName + " (\n"
-                    + "    memory_id     VARCHAR2(200) NOT NULL,\n"
-                    + "    messages_json JSON NOT NULL,\n"
-                    + "    updated_at    TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,\n"
-                    + "    expires_at    TIMESTAMP NULL,\n"
-                    + "    CONSTRAINT pk_chat_memory PRIMARY KEY (memory_id)\n"
-                    + "  )';\n"
-                    + "EXCEPTION\n"
-                    + "  WHEN OTHERS THEN\n"
-                    + "    IF SQLCODE != -955 THEN\n"
-                    + "      RAISE;\n"
-                    + "    END IF;\n"
-                    + "END;");
-    }
 
-    catch (SQLException e) {
-        throw new RuntimeException("Failed to create table " + tableName, e);
-    }}
+     */
+    private void createTable() throws SQLException {
+        try(Connection con=oracleDataSource.getConnection(); Statement create= con.createStatement()){
+
+
+            create.executeUpdate(  "CREATE TABLE IF NOT EXISTS " + tableName + " ("
+                    + "  memory_id     VARCHAR2(200) NOT NULL, "
+                    + "  messages_json JSON NOT NULL, "
+                    + "  expires_at    TIMESTAMP NULL, "
+                    + "  PRIMARY KEY (memory_id)"
+                    + ")");
+
+        }
+
+        catch (SQLException e) {
+            throw new RuntimeException("Failed to create table " + tableName, e);
+        }}
     /**
      * Retrieves chat messages for the given {@code memoryId} from the database.
      * <p>
@@ -129,26 +133,31 @@ public class OracleMemoryStore implements ChatMemoryStore {
         ensureNotBlank(id, "memoryId");
 
         try(Connection con=oracleDataSource.getConnection() ; PreparedStatement query=con.prepareStatement(
-                "SELECT json_serialize(messages_json RETURNING CLOB) AS messages_json " +
+                    "SELECT messages_json " +
                         "FROM " + tableName + " " +
                         "WHERE memory_id = ? " +
                         "AND (expires_at IS NULL OR expires_at > SYSTIMESTAMP)")) {
 
             OracleStatement os = query.unwrap(OracleStatement.class);
-            os.defineColumnType(1, Types.CLOB);
+
+            os.defineColumnType(1, OracleTypes.JSON);
+            os.setLobPrefetchSize(Integer.MAX_VALUE);
             query.setString(1,id);
             try(ResultSet res=query.executeQuery()){
                 if(!res.next())return Collections.emptyList();
                 else {
-                    Clob clob = res.getClob(1);
-                    String json = clob.getSubString(1, (int) clob.length());
-                    return ChatMessageDeserializer.messagesFromJson(json);
-                }
-        }
 
-    } catch (SQLException e) {
-        throw new RuntimeException("Failed to load Memoryid"+memoryId,e);
-    }
+                    OracleJsonArray value = res.getObject("messages_json", OracleJsonArray.class);
+
+                    return ChatMessageDeserializer.messagesFromJson(value.toString());
+
+
+                }
+            }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load Memoryid"+memoryId,e);
+        }
 
     }
     /**
@@ -175,15 +184,14 @@ public class OracleMemoryStore implements ChatMemoryStore {
 
         Timestamp expiresAt=computeExperationAt();
         try(Connection con=oracleDataSource.getConnection();  PreparedStatement update= con.prepareStatement(
-                        "MERGE INTO " + tableName + " t "
+                "MERGE INTO " + tableName + " t "
                         + "USING (SELECT ? AS memory_id, ? AS messages_json, ? AS expires_at FROM dual) s "
                         + "ON (t.memory_id = s.memory_id) "
                         + "WHEN MATCHED THEN UPDATE SET "
                         + "  t.messages_json = s.messages_json, "
-                        + "  t.expires_at    = s.expires_at, "
-                        + "  t.updated_at    = SYSTIMESTAMP "
-                        + "WHEN NOT MATCHED THEN INSERT (memory_id, messages_json, updated_at, expires_at) VALUES "
-                        + "  (s.memory_id, s.messages_json, SYSTIMESTAMP, s.expires_at)");){
+                        + "  t.expires_at    = s.expires_at "
+                        + "WHEN NOT MATCHED THEN INSERT (memory_id, messages_json,expires_at) VALUES "
+                        + "  (s.memory_id, s.messages_json, s.expires_at)");){
 
             update.setString(1,id);
             update.setString(2,json);
@@ -227,7 +235,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
      * If no expiration is required, set {@code ttl} to {@code null} or to a value less than or equal to {@code 0}.
      * In that case, records will be stored without an expiration timestamp.
      */
-    public Timestamp computeExperationAt(){
+    private Timestamp computeExperationAt(){
         if(ttl==null || ttl.isZero() || ttl.isNegative())return null;
         return Timestamp.from(java.time.Instant.now().plus(ttl));
     }
@@ -235,7 +243,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
      * Converts the supplied {@code memoryId} to a {@link String} suitable for persistence in Oracle Database.
      * @return the string representation of the memory ID
      */
-    public String memoryIdToString(Object memoryId){
+    private String memoryIdToString(Object memoryId){
         return memoryId.toString();
     }
     /**
@@ -243,6 +251,10 @@ public class OracleMemoryStore implements ChatMemoryStore {
      *
      * @return A new Builder instance
      */
+
+
+
+
     public static Builder builder() {
         return new Builder();
     }
@@ -262,7 +274,8 @@ public class OracleMemoryStore implements ChatMemoryStore {
          * @return this builder instance
          */
         public Builder oracleDataSource(OracleDataSource oracleDataSource) {
-            this.oracleDataSource = oracleDataSource;
+
+            this.oracleDataSource = ensureNotNull(oracleDataSource,"oracleDataSource");
             return this;
         }
 
@@ -273,12 +286,23 @@ public class OracleMemoryStore implements ChatMemoryStore {
          * @return this builder instance
          */
         public Builder tableName(String tableName) {
-            this.tableName = tableName;
+            this.tableName = ensureNotNull(tableName,"tableName");
             return this;
         }
 
         /**
          * Sets the time-to-live (TTL) for stored chat memory.
+         * <p>
+         * The TTL represents how long a conversation between the user and the AI is retained.
+         * For example, if the TTL is 7 days and the user does not interact with the chatbot
+         * within that period, the stored conversation expires and the chatbot will “forget”
+         * the previous context.
+         * <p>
+         * This helps keep context relevant (users returning after a long gap typically start a new topic)
+         * and prevents unbounded growth of stored conversation history.
+         * <p>
+         * Recommended TTL values are typically expressed in days, weeks, or months (depending on the
+         * product’s usage patterns and retention needs).
          * <p>
          * If {@code ttl} is {@code null} or less than or equal to zero, expiration is disabled and records
          * are stored without an {@code expires_at} timestamp.
@@ -298,7 +322,9 @@ public class OracleMemoryStore implements ChatMemoryStore {
          * @throws SQLException if initialization fails .
          */
         public OracleMemoryStore build() throws SQLException {
-            return new OracleMemoryStore(oracleDataSource, tableName, ttl);
+            ensureNotNull(tableName,"tableName");
+            ensureNotNull(oracleDataSource,"oracleDataSource");
+            return new OracleMemoryStore(this);
         }
     }
 }

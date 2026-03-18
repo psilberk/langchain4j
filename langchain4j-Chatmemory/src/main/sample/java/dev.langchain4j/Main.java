@@ -31,7 +31,7 @@ public class Main {
 
         OracleMemoryStore memorystore = OracleMemoryStore.builder()
                 .oracleDataSource(OracleWalletDataSourceFactory.createconnection())
-                .tableName("chat_memory")
+                .tableName("hello_hello_hello")
                 .ttl(Duration.ofHours(1))
                 .build();
 

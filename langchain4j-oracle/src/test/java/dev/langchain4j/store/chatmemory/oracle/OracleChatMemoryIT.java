@@ -1,4 +1,5 @@
 package dev.langchain4j.store.chatmemory.oracle;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -29,8 +30,8 @@ public class OracleChatMemoryIT {
     private static String userName;
     private static String password;
 
-    private final String userId = "user-123";
-    private OracleMemoryStore oracleMemoryStore;
+    private final String userId = "user-1234";
+    private static OracleMemoryStore oracleMemoryStore;
 
 @BeforeAll
 static void beforeAll() {
@@ -45,18 +46,9 @@ static void beforeAll() {
 // Create the table if it doesn't exist and ensure it's empty
 @BeforeEach
 void setUp() throws SQLException {
-    OracleDataSource oracleDataSource=new OracleDataSource();
-    oracleDataSource.setURL(jdbcUrl);
-    oracleDataSource.setUser(userName);
-    oracleDataSource.setPassword(password);
-    oracleMemoryStore=OracleMemoryStore
-                                        .builder()
-                                        .oracleDataSource(oracleDataSource)
-                                        .tableName("chat_memory")
-                                        .ttl(Duration.ZERO)
-                                        .build();
-    oracleMemoryStore.createTable();
-    oracleMemoryStore.deleteMessages(userId);
+
+    createTable("chatmemorybilal");
+
     List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
     assertThat(messages).isEmpty();
 
@@ -134,7 +126,7 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
     OracleMemoryStore ttlMemoryStore=OracleMemoryStore
             .builder()
             .oracleDataSource(oracleDataSource)
-            .tableName("chat_memory")
+            .tableName("chatmemorybilal")
             .ttl(Duration.ofSeconds(2))
             .build();
     // get the messages and check if isEmpty
@@ -264,7 +256,28 @@ void getMessages_should_throw_exception_when_memoryId_empty() {
                 .isExactlyInstanceOf(IllegalArgumentException.class)
                ;
     }
+    private static void createTable(String tableName) throws SQLException {
+        OracleDataSource oracleDataSource=new OracleDataSource();
+        oracleDataSource.setURL(jdbcUrl);
+        oracleDataSource.setUser(userName);
+        oracleDataSource.setPassword(password);
+        oracleMemoryStore=OracleMemoryStore
+                .builder()
+                .oracleDataSource(oracleDataSource)
+                .tableName(tableName)
+                .ttl(Duration.ZERO)
+                .build();
+        try (Connection connection = oracleDataSource.getConnection();
+             Statement statement = connection.createStatement()) {
 
+            statement.execute("CREATE TABLE IF NOT EXISTS " + tableName + " ("
+                    + "  memory_id     VARCHAR2(200) NOT NULL, "
+                    + "  messages_json JSON NOT NULL, "
+                    + "  expires_at    TIMESTAMP NULL, "
+                    + "  PRIMARY KEY (memory_id)"
+                    + ")");
+        }
+    }
 
 
 
