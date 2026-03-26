@@ -37,7 +37,7 @@ public class Main {
 
         // A stable identifier for the conversation session/user.
 
-        String memoryId = "user123-sessionB";
+        String memoryId = "user123-sessionB123";
 
         // In-memory window on top of the persistent store
 

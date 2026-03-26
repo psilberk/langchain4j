@@ -1,6 +1,8 @@
 package dev.langchain4j.store.chatmemory.oracle;
 
 import javax.sql.DataSource;
+import java.io.IOException;
+import java.net.Proxy;
 import java.sql.BatchUpdateException;
 import java.sql.Clob;
 import java.sql.Connection;
@@ -11,23 +13,42 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.exc.StreamReadException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DatabindException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageDeserializer;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 
+import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 
 import oracle.jdbc.OracleStatement;
 
 import oracle.jdbc.OracleTypes;
 import oracle.jdbc.pool.OracleDataSource;
+import oracle.jdbc.provider.oson.OsonFactory;
 import oracle.sql.json.OracleJsonArray;
+import oracle.sql.json.OracleJsonDatum;
+import oracle.sql.json.OracleJsonFactory;
+import oracle.sql.json.OracleJsonObject;
 import oracle.sql.json.OracleJsonValue;
 
 
+import static dev.langchain4j.data.message.AiMessage.aiMessage;
+import static dev.langchain4j.data.message.SystemMessage.systemMessage;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
 
 import static dev.langchain4j.internal.ValidationUtils.ensureNotEmpty;
@@ -128,12 +149,15 @@ public class OracleMemoryStore implements ChatMemoryStore {
      */
     @Override
     public List<ChatMessage> getMessages(Object memoryId) {
+
+        JsonFactory osonFactory = new OsonFactory();
+        ObjectMapper objectMapper = new ObjectMapper(osonFactory);
         ensureNotNull(memoryId, "memoryId");
         String id = memoryIdToString(memoryId);
         ensureNotBlank(id, "memoryId");
 
         try(Connection con=oracleDataSource.getConnection() ; PreparedStatement query=con.prepareStatement(
-                    "SELECT messages_json " +
+                "SELECT messages_json " +
                         "FROM " + tableName + " " +
                         "WHERE memory_id = ? " +
                         "AND (expires_at IS NULL OR expires_at > SYSTIMESTAMP)")) {
@@ -147,16 +171,17 @@ public class OracleMemoryStore implements ChatMemoryStore {
                 if(!res.next())return Collections.emptyList();
                 else {
 
-                    OracleJsonArray value = res.getObject("messages_json", OracleJsonArray.class);
+                    byte[] osonBytes = res.getObject("messages_json", OracleJsonDatum.class).shareBytes();
 
-                    return ChatMessageDeserializer.messagesFromJson(value.toString());
+                    List<StoredMsg> stored = objectMapper.readValue(osonBytes, new TypeReference<List<StoredMsg>>() {});
 
+
+                    return mapStoredToChat(stored);
 
                 }
             }
-
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to load Memoryid"+memoryId,e);
+        } catch (SQLException | IOException e) {
+            throw new RuntimeException("Failed to load Memoryid "+memoryId,e);
         }
 
     }
@@ -180,6 +205,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
         ensureNotNull(messages, "messages");
         ensureNotEmpty(messages, "messages");
         String json = ChatMessageSerializer.messagesToJson(messages);
+
 
 
         Timestamp expiresAt=computeExperationAt();
@@ -246,14 +272,126 @@ public class OracleMemoryStore implements ChatMemoryStore {
     private String memoryIdToString(Object memoryId){
         return memoryId.toString();
     }
+
+    /**
+     * DTO representing one stored chat message as it appears in {@code messages_json}.
+     * <p>
+     * The persisted JSON is polymorphic and uses a {@code type} discriminator. Depending on {@code type},
+     * a message may be represented either as:
+     * <ul>
+     *   <li>{@code {"type":"SYSTEM","text":"..."}}</li>
+     *   <li>{@code {"type":"AI","text":"..."}}</li>
+     *   <li>{@code {"type":"USER","contents":[{"type":"TEXT","text":"..."}]}}</li>
+     * </ul>
+     * This record is intentionally minimal and mirrors the persisted structure so it can be deserialized
+     * directly from OSON/JSON using Jackson.
+     *
+     * @param type     message type discriminator (e.g., {@code SYSTEM}, {@code USER}, {@code AI})
+     * @param text     message text for message types that store their payload in {@code text}
+     *                 (e.g., {@code SYSTEM}, {@code AI}); may be {@code null} for {@code USER}
+     * @param contents content items for {@code USER} messages; may be {@code null} for non-{@code USER} messages
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record StoredMsg(String type, String text, List<StoredContent> contents) {}
+
+    /**
+     * DTO representing one content item inside a stored {@code USER} message.
+     * <p>
+     * In the current storage format, user messages store a {@code contents} array, whose elements are
+     * typically {@code {"type":"TEXT","text":"..."}}.
+     *
+     * @param type content type discriminator (currently only {@code TEXT} is supported)
+     * @param text textual payload when {@code type == "TEXT"}
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record StoredContent(String type, String text) {}
+
+    /**
+     * Converts a list of stored message DTOs (deserialized from {@code messages_json}) into LangChain4j
+     * {@link dev.langchain4j.data.message.ChatMessage} instances.
+     * <p>
+     * This method bridges the gap between:
+     * <ul>
+     *   <li>the persisted JSON representation (polymorphic, schema-lite DTOs), and</li>
+     *   <li>LangChain4j runtime message classes (e.g., {@link dev.langchain4j.data.message.SystemMessage},
+     *       {@link dev.langchain4j.data.message.UserMessage}, {@link dev.langchain4j.data.message.AiMessage}).</li>
+     * </ul>
+     * Because {@link dev.langchain4j.data.message.ChatMessage} is an abstract type, callers must first
+     * deserialize persisted data into concrete DTOs and then map them to concrete LangChain4j message types.
+     * <p>
+     * Supported mappings:
+     * <ul>
+     *   <li>{@code SYSTEM} &rarr; {@link dev.langchain4j.data.message.SystemMessage} (requires {@code text})</li>
+     *   <li>{@code AI} &rarr; {@link dev.langchain4j.data.message.AiMessage} (requires {@code text})</li>
+     *   <li>{@code USER} &rarr; {@link dev.langchain4j.data.message.UserMessage} (requires {@code contents};
+     *       currently supports only {@code TEXT} content items)</li>
+     * </ul>
+     * <p>
+     * Null entries (or entries with null {@code type}) are skipped. Invalid or unsupported message/content
+     * types result in an {@link IllegalArgumentException}.
+     *
+     * @param stored list of stored message DTOs; may be {@code null} or empty
+     * @return a list of LangChain4j {@link dev.langchain4j.data.message.ChatMessage} instances;
+     *         never {@code null}
+     * @throws IllegalArgumentException if a required field is missing (e.g., {@code SYSTEM.text}),
+     *                                  or if an unsupported message/content type is encountered
+     */
+
+    private static List<ChatMessage> mapStoredToChat(List<StoredMsg> stored) {
+        if (stored == null || stored.isEmpty()) return Collections.emptyList();
+
+        List<ChatMessage> out = new ArrayList<>(stored.size());
+
+        for (StoredMsg m : stored) {
+            if (m == null || m.type() == null) continue;
+
+            switch (m.type()) {
+                case "SYSTEM" -> {
+                    if (m.text() == null) throw new IllegalArgumentException("SYSTEM message missing text");
+                    out.add(systemMessage(m.text()));
+                }
+                case "AI" -> {
+                    if (m.text() == null) throw new IllegalArgumentException("AI message missing text");
+                    out.add(aiMessage(m.text()));
+                }
+                case "USER" -> {
+                    List<StoredContent> c = m.contents();
+                    if (c == null) throw new IllegalArgumentException("USER message missing contents");
+
+                    List<Content> contents = new ArrayList<>(c.size());
+                    for (StoredContent sc : c) {
+                        if (sc == null || sc.type() == null) continue;
+
+                        if ("TEXT".equals(sc.type())) {
+                            if (sc.text() == null) throw new IllegalArgumentException("TEXT content missing text");
+                            contents.add(new TextContent(sc.text()));
+
+                        }
+                        else if ("IMAGE".equals(sc.type())) {
+                            if (sc.text() == null) throw new IllegalArgumentException("image content missing text");
+                            contents.add(new ImageContent(sc.text()));
+
+                        }
+                        else {
+                            throw new IllegalArgumentException("Unsupported USER content type: " + sc.type());
+                        }
+
+                    }
+
+
+                    out.add(new UserMessage(contents));
+                }
+                default -> throw new IllegalArgumentException("Unsupported message type: " + m.type());
+            }
+        }
+
+        return out;
+    }
     /**
      * Creates a new builder instance for constructing a OracleMemoryStore
      *
      * @return A new Builder instance
      */
-
-
-
 
     public static Builder builder() {
         return new Builder();

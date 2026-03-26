@@ -7,6 +7,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
 import oracle.jdbc.pool.OracleDataSource;
 import org.assertj.core.api.ThrowableAssert;
@@ -30,7 +31,7 @@ public class OracleChatMemoryIT {
     private static String userName;
     private static String password;
 
-    private final String userId = "user-1234";
+    private final String userId = "user123-sessionB123";
     private static OracleMemoryStore oracleMemoryStore;
 
 @BeforeAll
@@ -47,7 +48,7 @@ static void beforeAll() {
 @BeforeEach
 void setUp() throws SQLException {
 
-    createTable("chatmemorybilal");
+    createTable("hello_hello_hello");
 
     List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
     assertThat(messages).isEmpty();
@@ -77,16 +78,17 @@ void set_messages_into_oracle() {
     // setting up instruction for system
     List<ChatMessage> chatMessages = new ArrayList<>();
     chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
-    //add content to messtages(URL,ask the question)
+    //add content to messtages(ask the question)
     List<Content> userMsgContents = new ArrayList<>();
-    userMsgContents.add(new ImageContent("someCatImageUrl"));
-    chatMessages.add(new UserMessage("What do you see in this image?", userMsgContents));
+    userMsgContents.add(new TextContent("sometextcontent"));
+    chatMessages.add(new UserMessage("What do you see in this text?", userMsgContents));
     oracleMemoryStore.updateMessages(userId, chatMessages);
 
     // check size of messages
-    messages = oracleMemoryStore.getMessages(userId);
-    assertThat(messages).hasSize(2);
+    List<ChatMessage> newMessages = oracleMemoryStore.getMessages(userId);
+    assertThat(newMessages).hasSize(2);
 }
+
 /**
 *Verifies OracleMemoryStore can delete stored messages
 * for a given memory/user id from Oracle DB
@@ -126,7 +128,7 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
     OracleMemoryStore ttlMemoryStore=OracleMemoryStore
             .builder()
             .oracleDataSource(oracleDataSource)
-            .tableName("chatmemorybilal")
+            .tableName("hello_hello_hello")
             .ttl(Duration.ofSeconds(2))
             .build();
     // get the messages and check if isEmpty
@@ -137,8 +139,8 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
     List<ChatMessage> chatMessages = new ArrayList<>();
     chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
     List<Content> userMsgContents = new ArrayList<>();
-    userMsgContents.add(new ImageContent("someCatImageUrl"));
-    chatMessages.add(new UserMessage("What do you see in this image?", userMsgContents));
+    userMsgContents.add(new TextContent("sometextcontent"));
+    chatMessages.add(new UserMessage("What do you see in this text?", userMsgContents));
 
     ttlMemoryStore.updateMessages(userId, chatMessages);
 
