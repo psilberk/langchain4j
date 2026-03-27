@@ -3,12 +3,15 @@ package dev.langchain4j.store.chatmemory.oracle;
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.VideoContent;
 import oracle.jdbc.pool.OracleDataSource;
 import org.assertj.core.api.ThrowableAssert;
 import org.junit.jupiter.api.AfterAll;
@@ -41,16 +44,17 @@ static void beforeAll() {
     password = System.getenv("ORACLE_PASSWORD");
 
     // Skip integration tests if not configured
-    assumeTrue(jdbcUrl != null && userName != null && password != null,
+    assumeTrue(jdbcUrl != null ,
             "Local Oracle DB env vars not set; skipping integration tests");
 }
 // Create the table if it doesn't exist and ensure it's empty
 @BeforeEach
 void setUp() throws SQLException {
 
-    createTable("hello_hello_hello");
+    createTable("chat_memorystore");
 
     List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
+    oracleMemoryStore.deleteMessages(userId);
     assertThat(messages).isEmpty();
 
 
@@ -67,7 +71,7 @@ void deleteTable() throws SQLException {
 
 /**
 * Verifies OracleMemoryStore can persist and retrieve a list of chat messages
-* (System + User with ImageContent) in Oracle DB.
+* (System + User with TextContent) in Oracle DB.
 */
 @Test
 void set_messages_into_oracle() {
@@ -88,8 +92,99 @@ void set_messages_into_oracle() {
     List<ChatMessage> newMessages = oracleMemoryStore.getMessages(userId);
     assertThat(newMessages).hasSize(2);
 }
+    /**
+     * Verifies OracleMemoryStore can persist and retrieve a list of chat messages
+     * (System + User with ImageContent) in Oracle DB.
+     */
 
-/**
+    @Test
+    void set_image_into_oracle() {
+        // getmessages and check if they are empty
+        List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
+        assertThat(messages).isEmpty();
+
+        // setting up instruction for system
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
+        //add content to messtages(ask the question)
+        List<Content> userMsgContents = new ArrayList<>();
+        userMsgContents.add(new ImageContent("someimagecontent"));
+        chatMessages.add(new UserMessage("What do you see in this image?", userMsgContents));
+        oracleMemoryStore.updateMessages(userId, chatMessages);
+        // check size of messages
+        List<ChatMessage> newMessages = oracleMemoryStore.getMessages(userId);
+        assertThat(newMessages).hasSize(2);
+    }
+    /**
+     * Verifies OracleMemoryStore can persist and retrieve a list of chat messages
+     * (System + User with PdfFileContent) in Oracle DB.
+     */
+    @Test
+    void set_pdf_into_oracle() {
+        // getmessages and check if they are empty
+        List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
+        assertThat(messages).isEmpty();
+
+        // setting up instruction for system
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
+        //add content to messtages(ask the question)
+        List<Content> userMsgContents = new ArrayList<>();
+        userMsgContents.add(new PdfFileContent("somepdfcontent"));
+        chatMessages.add(new UserMessage("What do you see in this pdf?", userMsgContents));
+        oracleMemoryStore.updateMessages(userId, chatMessages);
+        // check size of messages
+        List<ChatMessage> newMessages = oracleMemoryStore.getMessages(userId);
+        assertThat(newMessages).hasSize(2);
+    }
+
+    /**
+     * Verifies OracleMemoryStore can persist and retrieve a list of chat messages
+     * (System + User with AudioContent) in Oracle DB.
+     */
+    @Test
+    void set_audio_into_oracle() {
+        // getmessages and check if they are empty
+        List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
+        assertThat(messages).isEmpty();
+
+        // setting up instruction for system
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
+        //add content to messtages(ask the question)
+        List<Content> userMsgContents = new ArrayList<>();
+        userMsgContents.add(new AudioContent("someaudiocontent"));
+        chatMessages.add(new UserMessage("What do you see in this audio?", userMsgContents));
+        oracleMemoryStore.updateMessages(userId, chatMessages);
+        // check size of messages
+        List<ChatMessage> newMessages = oracleMemoryStore.getMessages(userId);
+        assertThat(newMessages).hasSize(2);
+    }
+    /**
+     * Verifies OracleMemoryStore can persist and retrieve a list of chat messages
+     * (System + User with VideoContent) in Oracle DB.
+     */
+    @Test
+    void set_video_into_oracle() {
+        // getmessages and check if they are empty
+        List<ChatMessage> messages = oracleMemoryStore.getMessages(userId);
+        assertThat(messages).isEmpty();
+
+        // setting up instruction for system
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new SystemMessage("You are a large language model working with Langchain4j"));
+        //add content to messtages(ask the question)
+        List<Content> userMsgContents = new ArrayList<>();
+        userMsgContents.add(new VideoContent("somevideocontent"));
+        chatMessages.add(new UserMessage("What do you see in this video?", userMsgContents));
+        oracleMemoryStore.updateMessages(userId, chatMessages);
+        // check size of messages
+        List<ChatMessage> newMessages = oracleMemoryStore.getMessages(userId);
+        assertThat(newMessages).hasSize(2);
+    }
+
+
+    /**
 *Verifies OracleMemoryStore can delete stored messages
 * for a given memory/user id from Oracle DB
 */
@@ -128,7 +223,7 @@ void set_messages_with_ttl_into_oracle() throws SQLException {
     OracleMemoryStore ttlMemoryStore=OracleMemoryStore
             .builder()
             .oracleDataSource(oracleDataSource)
-            .tableName("hello_hello_hello")
+            .tableName("chat_memorystore")
             .ttl(Duration.ofSeconds(2))
             .build();
     // get the messages and check if isEmpty

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.exc.StreamReadException;
@@ -29,8 +30,11 @@ import dev.langchain4j.data.message.ChatMessageDeserializer;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 
 import dev.langchain4j.data.message.Content;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.internal.Json;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 
 import oracle.jdbc.OracleStatement;
@@ -60,13 +64,16 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  * <ul>
  *   <li>{@link #getMessages(Object)} : loads messages for a memory ID (if not expired)</li>
  *   <li>{@code updateMessages(...)} : inserts or replaces the stored messages for a memory ID</li>
- *   <li>{@code deleteMessages(...)} " removes messages for a memory ID</li>
+ *   <li>{@code deleteMessages(...)} : removes messages for a memory ID</li>
  * </ul>
  * <p>
- * Messages are persisted in JSON form (for example, in a {@code JSON} column), and deserialized when read.
+ * <strong>Database requirement:</strong> This implementation requires Oracle Database
+ * <strong>21ai or newer</strong> (or any Oracle Database version that supports the native {@code JSON}
+ * data type used by the {@code messages_json JSON} column).
  * <p>
- * Instances are created using the provided builder to simplify configuration .
+ * Messages are persisted in JSON form (stored in a {@code JSON} column) and deserialized when read.
  * <p>
+ * Instances are created using the provided builder to simplify configuration.
  */
 public class OracleMemoryStore implements ChatMemoryStore {
     private final OracleDataSource oracleDataSource;
@@ -170,9 +177,8 @@ public class OracleMemoryStore implements ChatMemoryStore {
                 else {
 
                     byte[] osonBytes = res.getObject("messages_json", OracleJsonDatum.class).shareBytes();
-
+                    //Use StoredMsg use a dto of Chatmemory (Chatmemory is an absract interface it can't be used here)
                     List<StoredMsg> stored = objectMapper.readValue(osonBytes, new TypeReference<List<StoredMsg>>() {});
-
 
                     return mapStoredToChat(stored);
 
@@ -218,7 +224,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
                         + "  (s.memory_id, s.messages_json, s.expires_at)");){
 
             update.setString(1,id);
-            update.setObject(2,json,OracleTypes.JSON);
+            update.setString(2,json);
             if(expiresAt==null) update.setNull(3, Types.TIMESTAMP);
             else {
                 update.setTimestamp(3,expiresAt);
@@ -289,18 +295,38 @@ public class OracleMemoryStore implements ChatMemoryStore {
      *                 (e.g., {@code SYSTEM}, {@code AI}); may be {@code null} for {@code USER}
      * @param contents content items for {@code USER} messages; may be {@code null} for non-{@code USER} messages
      */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record StoredMsg(String type, String text, List<StoredContent> contents) {}
 
     /**
      * DTO representing one content item inside a stored {@code USER} message.
      * <p>
-     * In the current storage format, user messages store a {@code contents} array, whose elements are
-     * typically {@code {"type":"TEXT","text":"..."}}.
+     * The persisted JSON uses a {@code type} discriminator per content item (for example {@code TEXT},
+     * {@code IMAGE}, {@code PDF}, {@code AUDIO}, {@code VIDEO}). Depending on {@code type}, the content
+     * may be represented either as plain {@code text} (for {@code TEXT}) or as a nested object containing
+     * a {@code url} (for binary/asset-like content types).
+     * <p>
+     * Example content item shapes:
+     * <ul>
+     *   <li>{@code {"type":"TEXT","text":"hello"}}</li>
+     *   <li>{@code {"type":"IMAGE","image":{"url":"https://..."}}}</li>
+     *   <li>{@code {"type":"PDF","pdfFile":{"url":"https://..."}}}</li>
+     *   <li>{@code {"type":"AUDIO","audio":{"url":"https://..."}}}</li>
+     *   <li>{@code {"type":"VIDEO","video":{"url":"https://..."}}}</li>
+     * </ul>
+     * <p>
+     * This record is annotated with {@link com.fasterxml.jackson.annotation.JsonIgnoreProperties} so the
+     * store remains tolerant to additional fields (e.g., {@code detailLevel}, {@code mimeType}, etc.).
      *
-     * @param type content type discriminator (currently only {@code TEXT} is supported)
-     * @param text textual payload when {@code type == "TEXT"}
+     * @param type    content type discriminator (e.g., {@code TEXT}, {@code IMAGE}, {@code PDF}, {@code AUDIO}, {@code VIDEO})
+     * @param text    textual payload when {@code type == "TEXT"}; otherwise may be {@code null}
+     * @param image   nested image object; expected to contain {@code {"url":"..."}} when {@code type == "IMAGE"}
+     * @param pdfFile nested PDF file object; expected to contain {@code {"url":"..."}} when {@code type == "PDF"}
+     * @param audio   nested audio object; expected to contain {@code {"url":"..."}} when {@code type == "AUDIO"}
+     * @param video   nested video object; expected to contain {@code {"url":"..."}} when {@code type == "VIDEO"}
      */
-    private record StoredContent(String type, String text) {}
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record StoredContent(String type, String text, JsonNode image, JsonNode pdfFile,JsonNode audio,JsonNode video) {}
 
     /**
      * Converts a list of stored message DTOs (deserialized from {@code messages_json}) into LangChain4j
@@ -308,31 +334,35 @@ public class OracleMemoryStore implements ChatMemoryStore {
      * <p>
      * This method bridges the gap between:
      * <ul>
-     *   <li>the persisted JSON representation (polymorphic, schema-lite DTOs), and</li>
-     *   <li>LangChain4j runtime message classes (e.g., {@link dev.langchain4j.data.message.SystemMessage},
+     *   <li>the persisted JSON representation (polymorphic DTOs), and</li>
+     *   <li>LangChain4j concrete message classes (e.g., {@link dev.langchain4j.data.message.SystemMessage},
      *       {@link dev.langchain4j.data.message.UserMessage}, {@link dev.langchain4j.data.message.AiMessage}).</li>
      * </ul>
-     * Because {@link dev.langchain4j.data.message.ChatMessage} is an abstract type, callers must first
-     * deserialize persisted data into concrete DTOs and then map them to concrete LangChain4j message types.
      * <p>
-     * Supported mappings:
+     * Supported message mappings:
      * <ul>
      *   <li>{@code SYSTEM} &rarr; {@link dev.langchain4j.data.message.SystemMessage} (requires {@code text})</li>
      *   <li>{@code AI} &rarr; {@link dev.langchain4j.data.message.AiMessage} (requires {@code text})</li>
-     *   <li>{@code USER} &rarr; {@link dev.langchain4j.data.message.UserMessage} (requires {@code contents};
-     *       currently supports only {@code TEXT} content items)</li>
+     *   <li>{@code USER} &rarr; {@link dev.langchain4j.data.message.UserMessage} (requires {@code contents})</li>
      * </ul>
      * <p>
-     * Null entries (or entries with null {@code type}) are skipped. Invalid or unsupported message/content
+     * Supported {@code USER.contents} item mappings:
+     * <ul>
+     *   <li>{@code TEXT} &rarr; {@link dev.langchain4j.data.message.TextContent}</li>
+     *   <li>{@code IMAGE} &rarr; {@link dev.langchain4j.data.message.ImageContent} (expects {@code image.url})</li>
+     *   <li>{@code PDF} &rarr; {@link dev.langchain4j.data.message.PdfFileContent} (expects {@code pdfFile.url})</li>
+     *   <li>{@code AUDIO} &rarr; {@link dev.langchain4j.data.message.AudioContent} (expects {@code audio.url})</li>
+     *   <li>{@code VIDEO} &rarr; {@link dev.langchain4j.data.message.VideoContent} (expects {@code video.url})</li>
+     * </ul>
+     * <p>
+     * Null entries (or entries with null {@code type}) are skipped. Missing required fields or unsupported
      * types result in an {@link IllegalArgumentException}.
      *
      * @param stored list of stored message DTOs; may be {@code null} or empty
-     * @return a list of LangChain4j {@link dev.langchain4j.data.message.ChatMessage} instances;
-     *         never {@code null}
-     * @throws IllegalArgumentException if a required field is missing (e.g., {@code SYSTEM.text}),
+     * @return a list of LangChain4j {@link dev.langchain4j.data.message.ChatMessage} instances; never {@code null}
+     * @throws IllegalArgumentException if a required field is missing (e.g., {@code SYSTEM.text} or {@code TEXT.text}),
      *                                  or if an unsupported message/content type is encountered
      */
-
     private static List<ChatMessage> mapStoredToChat(List<StoredMsg> stored) {
         if (stored == null || stored.isEmpty()) return Collections.emptyList();
 
@@ -358,11 +388,32 @@ public class OracleMemoryStore implements ChatMemoryStore {
                     for (StoredContent sc : c) {
                         if (sc == null || sc.type() == null) continue;
 
-                        if ("TEXT".equals(sc.type())) {
-                            if (sc.text() == null) throw new IllegalArgumentException("TEXT content missing text");
-                            contents.add(new TextContent(sc.text()));
-                        } else {
-                            throw new IllegalArgumentException("Unsupported USER content type: " + sc.type());
+                        switch (sc.type()) {
+                            case "TEXT" -> {
+                                if (sc.text() == null) throw new IllegalArgumentException("TEXT content missing text");
+                                contents.add(new TextContent(sc.text()));
+                            }
+                            case "IMAGE" -> {
+                                String url = toURL(sc.image());
+                                if (url == null) throw new IllegalArgumentException("IMAGE content missing image.url");
+                                contents.add(new ImageContent(url));
+                            }
+                            case "PDF" -> {
+                                String url = toURL(sc.pdfFile());
+                                if (url == null) throw new IllegalArgumentException("PDF content missing pdf.url");
+                                contents.add(new PdfFileContent(url));
+                            }
+                            case "AUDIO" -> {
+                                String url = toURL(sc.audio());
+                                if (url == null) throw new IllegalArgumentException("PDF content missing pdf.url");
+                                contents.add(new PdfFileContent(url));
+                            }
+                            case "VIDEO" -> {
+                                String url = toURL(sc.video());
+                                if (url == null) throw new IllegalArgumentException("PDF content missing pdf.url");
+                                contents.add(new PdfFileContent(url));
+                            }
+                            default -> throw new IllegalArgumentException("Unsupported USER content type: " + sc.type());
                         }
                     }
 
@@ -374,6 +425,21 @@ public class OracleMemoryStore implements ChatMemoryStore {
         }
 
         return out;
+    }
+    /**
+     * Extracts a URL string from a nested JSON object in the common form {@code {"url":"..."} }.
+     * <p>
+     * This helper is used for non-text content types (image, pdf, audio, video) that are represented
+     * as nested objects containing a URL.
+     *
+     * @param fileNode the nested JSON node (for example the value of {@code image}, {@code pdfFile}, {@code audio}, {@code video});
+     *                 may be {@code null}
+     * @return the URL value if present and textual; otherwise {@code null}
+     */
+    private static String toURL(JsonNode fileNode) {
+        if (fileNode == null || fileNode.isNull()) return null;
+        JsonNode url = fileNode.get("url");
+        return (url != null && url.isTextual()) ? url.asText() : null;
     }
     /**
      * Creates a new builder instance for constructing a OracleMemoryStore
