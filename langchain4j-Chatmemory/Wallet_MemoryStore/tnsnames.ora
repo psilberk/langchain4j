@@ -1,0 +1,12 @@
+memorystore_high = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.eu-amsterdam-1.oraclecloud.com))(connect_data=(service_name=g8b577ff91c41bb_memorystore_high.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+memorystore_medium = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.eu-amsterdam-1.oraclecloud.com))(connect_data=(service_name=g8b577ff91c41bb_memorystore_medium.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+memorystore_low = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.eu-amsterdam-1.oraclecloud.com))(connect_data=(service_name=g8b577ff91c41bb_memorystore_low.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+memorystore_tp = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.eu-amsterdam-1.oraclecloud.com))(connect_data=(service_name=g8b577ff91c41bb_memorystore_tp.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+memorystore_tpurgent = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.eu-amsterdam-1.oraclecloud.com))(connect_data=(service_name=g8b577ff91c41bb_memorystore_tpurgent.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+
+

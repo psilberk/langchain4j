@@ -12,7 +12,7 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <langchain4j.version>0.34.0</langchain4j.version>
+        <langchain4j.version>1.12.2</langchain4j.version>
     </properties>
 <dependencies>
 
@@ -38,6 +38,11 @@
         <version>21.5.0.0</version>
         <scope>runtime</scope>
     </dependency>
+    <dependency>
+        <groupId>dev.langchain4j</groupId>
+        <artifactId>langchain4j-core</artifactId>
+        <version>1.12.2</version>
+    </dependency>
 
     <dependency>
         <groupId>com.oracle.database.security</groupId>
@@ -52,17 +57,13 @@
         <version>21.5.0.0</version>
         <scope>runtime</scope>
     </dependency>
-    <dependency>
-    <groupId>dev.langchain4j</groupId>
-    <artifactId>langchain4j-open-ai</artifactId>
-    <version>${langchain4j.version}</version>
 
-</dependency>
     <dependency>
         <groupId>dev.langchain4j</groupId>
         <artifactId>langchain4j</artifactId>
         <version>${langchain4j.version}</version>
     </dependency>
+
 
     <dependency>
         <groupId>org.projectlombok</groupId>
@@ -70,6 +71,35 @@
         <version>1.18.32</version>
         <scope>provided</scope>
     </dependency>
-   
+
+    <dependency>
+        <groupId>org.apache.pdfbox</groupId>
+        <artifactId>pdfbox</artifactId>
+        <version>2.0.30</version>
+    </dependency>
+
+
+
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+        </dependency>
+
 </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 </project>
