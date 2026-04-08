@@ -33,7 +33,6 @@ final class OsonLangChain4jMapper {
     private static final ObjectMapper LC4J_MAPPER =
             JacksonChatMessageJsonCodec.chatMessageJsonMapperBuilder()
                     .build()
-                    .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
                     .disable(SerializationFeature.WRITE_EMPTY_JSON_ARRAYS);
     private static final TypeReference<List<ChatMessage>> CHAT_MESSAGE_LIST_TYPE =
             new TypeReference<>() {};
