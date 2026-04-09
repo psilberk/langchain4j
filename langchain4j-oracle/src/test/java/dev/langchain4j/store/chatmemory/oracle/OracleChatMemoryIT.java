@@ -46,8 +46,8 @@ public class OracleChatMemoryIT {
 @BeforeAll
 static void beforeAll() {
     jdbcUrl  = System.getenv("ORACLE_JDBC_URL");
-    userName = System.getenv("ORACLE_USERNAME");
-    password = System.getenv("ORACLE_PASSWORD");
+    userName = System.getenv("ORACLE_JDBC_USER");
+    password = System.getenv("ORACLE_JDBC_PASSWORD");
 
     // Skip integration tests if not configured
     assumeTrue(jdbcUrl != null ,

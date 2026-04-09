@@ -107,7 +107,6 @@ public class OracleMemoryStore implements ChatMemoryStore {
     private final Duration ttl;
     private final String tableName;
 
-    private static final TypeReference<List<ChatMessage>> CHAT_MESSAGE_LIST = new TypeReference<>() {};
 
     /**
      * Constructs Oracle Memory Store configured by a builder.
