@@ -47,8 +47,8 @@ public class Main {
         // Create a memory store backed by Oracle DB using wallet-based datasource/connection
 
         OracleMemoryStore memorystore = OracleMemoryStore.builder()
-                .oracleDataSource(OracleWalletDataSourceFactory.createconnection())
-                .tableName("hello_hello_hello")
+                .dataSource(OracleWalletDataSourceFactory.createconnection())
+                .tableName("hello_hello_helloo")
                 .ttl(Duration.ofHours(1))
                 .build();
 
@@ -71,8 +71,6 @@ public class Main {
                 .chatMemory(chatMemory)
                 .tools(new Demotools())
                 .build();
-
-
 
 
         byte[] bytes = Files.readAllBytes(Path.of("/Users/bilallaariny/Downloads/Oracle-Morocco.jpg"));

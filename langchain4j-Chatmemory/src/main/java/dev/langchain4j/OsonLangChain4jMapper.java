@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.JacksonChatMessageJsonCodec;
 import oracle.jdbc.provider.oson.OsonFactory;
@@ -22,18 +21,29 @@ import java.util.List;
  *   <li>{@code LC4J_MAPPER.writeValue(OSON JsonGenerator, messages)} → OSON bytes</li>
  *   <li>{@code LC4J_MAPPER.readValue(OSON JsonParser, TypeReference)} → messages</li>
  * </ul>
+ * <p>
+ * <strong>Zero intermediates</strong>: No {@link com.fasterxml.jackson.databind.JsonNode}, no strings, no manual dispatch.
+ * LangChain4J's pre-configured {@link ObjectMapper} (with mixins for polymorphism) serializes directly to OSON stream.
+ * <p>
  * Requires Oracle JDBC 23ai+ for full OSON streaming support.
  */
 final class OsonLangChain4jMapper {
 
-    private static final ObjectMapper LC4J_MAPPER =
-            JacksonChatMessageJsonCodec.chatMessageJsonMapperBuilder()
-                    .build()
-                    .disable(SerializationFeature.WRITE_EMPTY_JSON_ARRAYS);
+    private static final ObjectMapper LC4J_MAPPER = createMapper();
+
     private static final TypeReference<List<ChatMessage>> CHAT_MESSAGE_LIST_TYPE =
             new TypeReference<>() {};
 
     private static final OsonFactory OSON_FACTORY = new OsonFactory();
+
+    private static ObjectMapper createMapper() {
+        ObjectMapper mapper = JacksonChatMessageJsonCodec.chatMessageJsonMapperBuilder().build();
+        mapper.configOverride(List.class)
+                .setInclude(JsonInclude.Value.construct(
+                        JsonInclude.Include.NON_EMPTY,
+                        JsonInclude.Include.USE_DEFAULTS));
+        return mapper;
+    }
 
     /**
      * Serializes {@link List&lt;ChatMessage&gt;} directly to OSON bytes via streaming.

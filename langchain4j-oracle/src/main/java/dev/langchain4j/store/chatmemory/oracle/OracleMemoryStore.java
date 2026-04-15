@@ -59,7 +59,6 @@ import oracle.jdbc.OracleStatement;
 
 import oracle.jdbc.OracleType;
 import oracle.jdbc.OracleTypes;
-import oracle.jdbc.pool.OracleDataSource;
 
 import oracle.jdbc.provider.oson.OsonFactory;
 import oracle.sql.json.OracleJsonArray;
@@ -102,7 +101,7 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  * Instances are created using the provided builder to simplify configuration.
  */
 public class OracleMemoryStore implements ChatMemoryStore {
-    private final OracleDataSource oracleDataSource;
+    private final DataSource dataSource;
     private final Duration ttl;
     private final String tableName;
 
@@ -116,7 +115,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
      */
     private OracleMemoryStore(Builder builder) throws SQLException {
 
-        this.oracleDataSource= builder.oracleDataSource;
+        this.dataSource= builder.dataSource;
         this.tableName=builder.tableName;
         this.ttl = builder.ttl;
         try {
@@ -143,7 +142,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
 
      */
     private void createTable() throws SQLException {
-        try(Connection con=oracleDataSource.getConnection(); Statement create= con.createStatement()){
+        try(Connection con=dataSource.getConnection(); Statement create= con.createStatement()){
 
 
             create.executeUpdate(  "CREATE TABLE IF NOT EXISTS " + tableName + " ("
@@ -188,7 +187,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
         String id = memoryIdToString(memoryId);
         ensureNotBlank(id, "memoryId");
 
-        try(Connection con=oracleDataSource.getConnection() ; PreparedStatement query=con.prepareStatement(
+        try(Connection con=dataSource.getConnection() ; PreparedStatement query=con.prepareStatement(
                 "SELECT messages_json " +
                         "FROM " + tableName + " " +
                         "WHERE memory_id = ? " +
@@ -246,7 +245,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
             throw new RuntimeException("Failed to serialize messages to OSON", e);
         }
 
-        try(Connection con=oracleDataSource.getConnection();  PreparedStatement update= con.prepareStatement(
+        try(Connection con=dataSource.getConnection();  PreparedStatement update= con.prepareStatement(
                 "MERGE INTO " + tableName + " t "
                         + "USING (SELECT ? AS memory_id, ? AS messages_json, ? AS expires_at FROM dual) s "
                         + "ON (t.memory_id = s.memory_id) "
@@ -282,7 +281,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
         String id = memoryIdToString(memoryId);
         ensureNotBlank(id, "memoryId");
 
-        try(Connection con=oracleDataSource.getConnection(); PreparedStatement delete= con.prepareStatement("DELETE FROM " + tableName + " WHERE memory_id = ?")){
+        try(Connection con=dataSource.getConnection(); PreparedStatement delete= con.prepareStatement("DELETE FROM " + tableName + " WHERE memory_id = ?")){
 
             delete.setString(1,id);
             delete.executeUpdate();
@@ -326,20 +325,20 @@ public class OracleMemoryStore implements ChatMemoryStore {
      * Builder for creating OracleMemoryStore instances with fluent API.
      */
     public static class Builder {
-        private OracleDataSource oracleDataSource;
+        private DataSource dataSource;
         private String tableName = "chat_memory";
         private Duration ttl = Duration.ZERO;
 
 
         /**
-         * Sets the {@link OracleDataSource} used to obtain JDBC connections for all persistence operations.
+         * Sets the {@link DataSource} used to obtain JDBC connections for all persistence operations.
          *
-         * @param oracleDataSource the Oracle data source; must not be {@code null}
+         * @param dataSource the Oracle data source; must not be {@code null}
          * @return this builder instance
          */
-        public Builder oracleDataSource(OracleDataSource oracleDataSource) {
+        public Builder dataSource(DataSource dataSource) {
 
-            this.oracleDataSource = ensureNotNull(oracleDataSource,"oracleDataSource");
+            this.dataSource = ensureNotNull(dataSource,"dataSource");
             return this;
         }
 
@@ -387,7 +386,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
          */
         public OracleMemoryStore build() throws SQLException {
             ensureNotNull(tableName,"tableName");
-            ensureNotNull(oracleDataSource,"oracleDataSource");
+            ensureNotNull(dataSource,"dataSource");
             return new OracleMemoryStore(this);
         }
     }
