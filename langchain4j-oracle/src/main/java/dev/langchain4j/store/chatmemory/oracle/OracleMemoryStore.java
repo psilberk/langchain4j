@@ -217,7 +217,7 @@ public class OracleMemoryStore implements ChatMemoryStore {
     /**
      * Updates the stored message list for the specified {@code memoryId}.
      * <p>
-     * This method uses Oracle Database {@code MERGE} syntax (an upsert): if a record for the given memory ID
+     * This method performs an upsert: if a record for the given memory ID
      * already exists, it updates the stored JSON message content; otherwise it inserts a new row containing
      * the memory ID and the JSON content.
      *
@@ -227,17 +227,14 @@ public class OracleMemoryStore implements ChatMemoryStore {
 
     @Override
     public void updateMessages(Object memoryId, List<ChatMessage> messages) {
-
         ensureNotNull(memoryId, "memoryId");
         String id = memoryIdToString(memoryId);
         ensureNotBlank(id, "memoryId");
         ensureNotNull(messages, "messages");
         ensureNotEmpty(messages, "messages");
 
+        Timestamp expiresAt = computeExpirationAt();
 
-
-
-        Timestamp expiresAt=computeExperationAt();
         final byte[] osonBytes;
         try {
             osonBytes = OsonLangChain4jMapper.toOsonBytes(messages);
@@ -245,28 +242,25 @@ public class OracleMemoryStore implements ChatMemoryStore {
             throw new RuntimeException("Failed to serialize messages to OSON", e);
         }
 
-        try(Connection con=dataSource.getConnection();  PreparedStatement update= con.prepareStatement(
-                "MERGE INTO " + tableName + " t "
-                        + "USING (SELECT ? AS memory_id, ? AS messages_json, ? AS expires_at FROM dual) s "
-                        + "ON (t.memory_id = s.memory_id) "
-                        + "WHEN MATCHED THEN UPDATE SET "
-                        + "  t.messages_json = s.messages_json, "
-                        + "  t.expires_at    = s.expires_at "
-                        + "WHEN NOT MATCHED THEN INSERT (memory_id, messages_json,expires_at) VALUES "
-                        + "  (s.memory_id, s.messages_json, s.expires_at)");){
+        try (Connection con = dataSource.getConnection();
 
-            update.setString(1,id);
-            update.setObject(2,osonBytes, OracleType.JSON);
-            if(expiresAt==null) update.setNull(3, Types.TIMESTAMP);
-            else {
-                update.setTimestamp(3,expiresAt);
-            }
-            update.executeUpdate();
+             PreparedStatement upsert = con.prepareStatement(
+                     "MERGE INTO " + tableName + " t " +
+                             "USING (SELECT ? AS memory_id, ? AS messages_json, ? AS expires_at FROM dual) s " +
+                             "ON (t.memory_id = s.memory_id) " +
+                             "WHEN MATCHED THEN UPDATE SET " +
+                             "t.messages_json = s.messages_json, t.expires_at = s.expires_at " +
+                             "WHEN NOT MATCHED THEN INSERT (memory_id, messages_json, expires_at) " +
+                             "VALUES (s.memory_id, s.messages_json, s.expires_at)"
+             )) {
 
+            upsert.setString(1, id);
+            upsert.setObject(2, osonBytes, OracleType.JSON);
+            bindNullableTimestamp(upsert, 3, expiresAt);
+            upsert.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to update messages for memoryId=" + id, e);
         }
-
     }
     /**
      * Deletes the stored chat memory for the specified {@code memoryId}.
@@ -298,9 +292,17 @@ public class OracleMemoryStore implements ChatMemoryStore {
      * If no expiration is required, set {@code ttl} to {@code null} or to a value less than or equal to {@code 0}.
      * In that case, records will be stored without an expiration timestamp.
      */
-    private Timestamp computeExperationAt(){
+    private Timestamp computeExpirationAt(){
         if(ttl==null || ttl.isZero() || ttl.isNegative())return null;
         return Timestamp.from(Instant.now().plus(ttl));
+    }
+
+    private void bindNullableTimestamp(PreparedStatement statement, int index, Timestamp value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.TIMESTAMP);
+            return;
+        }
+        statement.setTimestamp(index, value);
     }
     /**
      * Converts the supplied {@code memoryId} to a {@link String} suitable for persistence in Oracle Database.

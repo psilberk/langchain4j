@@ -343,7 +343,7 @@ public class OracleChatMemoryIT {
         OracleMemoryStore ttlMemoryStore = OracleMemoryStore.builder()
                 .dataSource(dataSource)
                 .tableName(TABLE_NAME)
-                .ttl(Duration.ofSeconds(2))
+                .ttl(Duration.ofSeconds(5))
                 .build();
 
         assertThat(ttlMemoryStore.getMessages(userId)).isEmpty();
@@ -357,6 +357,18 @@ public class OracleChatMemoryIT {
 
         await().atMost(Duration.ofSeconds(10))
                 .untilAsserted(() -> assertThat(ttlMemoryStore.getMessages(userId)).isEmpty());
+
+        List<ChatMessage> newConversation = List.of(
+                new SystemMessage("new conversation"),
+                new UserMessage("fresh message")
+        );
+
+        ttlMemoryStore.updateMessages(userId, newConversation);
+
+        List<ChatMessage> loaded = ttlMemoryStore.getMessages(userId);
+        assertThat(loaded).hasSize(2);
+        assertThat(((SystemMessage) loaded.get(0)).text()).isEqualTo("new conversation");
+        assertThat(((UserMessage) loaded.get(1)).singleText()).isEqualTo("fresh message");
     }
 
     /**
@@ -496,11 +508,5 @@ public class OracleChatMemoryIT {
         return dataSource;
     }
 
-    private static boolean isContainerRuntimeAvailable() {
-        try {
-            return DockerClientFactory.instance().isDockerAvailable();
-        } catch (RuntimeException e) {
-            return false;
-        }
-    }
+
 }

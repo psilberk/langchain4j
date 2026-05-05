@@ -1,35 +1,17 @@
 package dev.langchain4j;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
-import dev.langchain4j.data.document.Metadata;
-import dev.langchain4j.data.message.AudioContent;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.Content;
-import dev.langchain4j.data.message.CustomMessage;
-import dev.langchain4j.data.message.ImageContent;
-import dev.langchain4j.data.message.PdfFileContent;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
-import oracle.jdbc.pool.OracleDataSource;
 
 public class Main {
-    public static void main(String[] args) throws SQLException, IOException {
+    public static void main(String[] args) throws SQLException {
 
         // Build a chat model client (LangChain4j) that will call the OpenRouter endpoint
         ChatModel model = OpenAiChatModel.builder()
@@ -48,13 +30,13 @@ public class Main {
 
         OracleMemoryStore memorystore = OracleMemoryStore.builder()
                 .dataSource(OracleWalletDataSourceFactory.createconnection())
-                .tableName("hello_hello_helloo")
-                .ttl(Duration.ofHours(1))
+                .tableName("hello_hello_hellooooooo")
+                .ttl(Duration.ofSeconds(40))
                 .build();
 
         // A stable identifier for the conversation session/user.
 
-        String memoryId = "user123-session0089000000000000000909900000";
+        String memoryId = "user123-session00890000000909900000";
 
         // In-memory window on top of the persistent store
 
@@ -69,32 +51,31 @@ public class Main {
         Assistant assistant = AiServices.builder(Assistant.class)
                 .chatModel(model)
                 .chatMemory(chatMemory)
-                .tools(new Demotools())
+                .tools(Demotools.class)
                 .build();
 
+        System.out.println("Chat started. Type your message and press Enter.");
+        System.out.println("Type 'exit' or 'quit' to stop.");
 
-        byte[] bytes = Files.readAllBytes(Path.of("/Users/bilallaariny/Downloads/Oracle-Morocco.jpg"));
-        String b64 = Base64.getEncoder().encodeToString(bytes);
-        String dataUrl = "data:image/jpg;base64," + b64;
+        try (Scanner scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.print("You: ");
+                if (!scanner.hasNextLine()) {
+                    break;
+                }
+                String userInput = scanner.nextLine().trim();
+                if (userInput.isEmpty()) {
+                    continue;
+                }
+                if ("exit".equalsIgnoreCase(userInput) || "quit".equalsIgnoreCase(userInput)) {
+                    System.out.println("Bye.");
+                    break;
+                }
 
-        List<Content> contents = List.of(
-                new ImageContent(dataUrl),
-                new TextContent("What is in this image?")
-        );
-
-        List<ChatMessage> existing = memorystore.getMessages(memoryId);
-        List<ChatMessage> merged = new ArrayList<>(existing);
-        merged.add(new UserMessage(contents));
-        memorystore.updateMessages(memoryId, merged);
-
-        String answer1 = assistant.chat("What time is it right now? Use the currentTimeUtc tool.");
-        System.out.println("Bot: " + answer1);
-        // 2) Ask the question automatically (no CLI)
-        String answer2 = assistant.chat("What is in this image?");
-
-        System.out.println("Bot: " + answer2);
-
-
+                String answer = assistant.chat(userInput);
+                System.out.println("Bot: " + answer);
+            }
+        }
     }
 
 
