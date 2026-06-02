@@ -32,10 +32,8 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
         this.dataSource = builder.dataSource;
 
         String tableName = builder.tableName == null ? "CHAT_MEMORY" : builder.tableName;
-        String memoryIdColumnName =
-                builder.memoryIdColumnName == null ? "MEMORY_ID" : builder.memoryIdColumnName;
-        String contentColumnName =
-                builder.contentColumnName == null ? "CONTENT" : builder.contentColumnName;
+        String memoryIdColumnName = builder.memoryIdColumnName == null ? "MEMORY_ID" : builder.memoryIdColumnName;
+        String contentColumnName = builder.contentColumnName == null ? "CONTENT" : builder.contentColumnName;
 
         this.selectSql = "SELECT " + contentColumnName + " FROM " + tableName + " WHERE " + memoryIdColumnName + " = ?";
         this.mergeSql = "MERGE INTO " + tableName + " t "

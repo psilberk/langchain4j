@@ -29,7 +29,8 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
 
     @BeforeEach
     void setUp() throws SQLException {
-        tableName = "LANGCHAIN4J_CHAT_MEMORY_" + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
+        tableName = "LANGCHAIN4J_CHAT_MEMORY_"
+                + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
         createTable(tableName, MEMORY_ID_COLUMN, CONTENT_COLUMN);
         store = OracleChatMemoryStore.builder()
                 .dataSource(getDataSource())
@@ -68,7 +69,8 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
     void should_replace_messages_on_update() {
         String memoryId = "user-replace";
 
-        store.updateMessages(memoryId, Arrays.<ChatMessage>asList(UserMessage.from("Old message"), AiMessage.from("Old reply")));
+        store.updateMessages(
+                memoryId, Arrays.<ChatMessage>asList(UserMessage.from("Old message"), AiMessage.from("Old reply")));
         store.updateMessages(memoryId, Collections.<ChatMessage>singletonList(UserMessage.from("Brand new message")));
 
         List<ChatMessage> retrieved = store.getMessages(memoryId);
@@ -97,8 +99,8 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
 
     @Test
     void should_use_custom_table_and_column_names() throws SQLException {
-        String customTable =
-                "LANGCHAIN4J_CHAT_MEMORY_CUSTOM_" + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
+        String customTable = "LANGCHAIN4J_CHAT_MEMORY_CUSTOM_"
+                + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
         try {
             createTable(customTable, "session_id", "messages_json");
 
@@ -109,7 +111,8 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
                     .contentColumnName("messages_json")
                     .build();
 
-            customStore.updateMessages("custom-user", Collections.<ChatMessage>singletonList(UserMessage.from("Custom columns work")));
+            customStore.updateMessages(
+                    "custom-user", Collections.<ChatMessage>singletonList(UserMessage.from("Custom columns work")));
             assertThat(customStore.getMessages("custom-user")).hasSize(1);
         } finally {
             dropTableIfExists(customTable);
@@ -118,8 +121,8 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
 
     @Test
     void should_throw_when_table_does_not_exist() throws SQLException {
-        String missingTable =
-                "LANGCHAIN4J_CHAT_MEMORY_MISSING_" + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
+        String missingTable = "LANGCHAIN4J_CHAT_MEMORY_MISSING_"
+                + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
         dropTableIfExists(missingTable);
 
         OracleChatMemoryStore missingTableStore = OracleChatMemoryStore.builder()
@@ -127,11 +130,11 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
                 .tableName(missingTable)
                 .build();
 
-        assertThatThrownBy(() -> missingTableStore.getMessages("missing"))
-                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> missingTableStore.getMessages("missing")).isInstanceOf(RuntimeException.class);
     }
 
-    private void createTable(String tableName, String memoryIdColumnName, String contentColumnName) throws SQLException {
+    private void createTable(String tableName, String memoryIdColumnName, String contentColumnName)
+            throws SQLException {
         try (Connection connection = getConnection();
                 Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE " + tableName + " ("
