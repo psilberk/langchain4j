@@ -8,6 +8,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.store.memory.chat.oracle.OracleChatMemoryStore.ContentColumnType;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -63,6 +64,85 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
         assertThat(retrieved.get(0)).isInstanceOf(SystemMessage.class);
         assertThat(retrieved.get(1)).isInstanceOf(UserMessage.class);
         assertThat(retrieved.get(2)).isInstanceOf(AiMessage.class);
+    }
+
+    @Test
+    void should_create_clob_table_when_enabled() throws SQLException {
+        String generatedTable = "LANGCHAIN4J_CHAT_MEMORY_CREATE_CLOB_"
+                + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
+        try {
+            dropTableIfExists(generatedTable);
+
+            OracleChatMemoryStore generatedStore = OracleChatMemoryStore.builder()
+                    .dataSource(getDataSource())
+                    .tableName(generatedTable)
+                    .createTable()
+                    .build();
+
+            generatedStore.updateMessages(
+                    "generated-clob-user",
+                    Arrays.<ChatMessage>asList(UserMessage.from("Hello CLOB"), AiMessage.from("CLOB table exists")));
+
+            List<ChatMessage> retrieved = generatedStore.getMessages("generated-clob-user");
+            assertThat(retrieved).hasSize(2);
+            assertThat(((UserMessage) retrieved.get(0)).singleText()).isEqualTo("Hello CLOB");
+            assertThat(((AiMessage) retrieved.get(1)).text()).isEqualTo("CLOB table exists");
+        } finally {
+            dropTableIfExists(generatedTable);
+        }
+    }
+
+    @Test
+    void should_store_and_retrieve_messages_with_native_json_column() throws SQLException {
+        String jsonTable = "LANGCHAIN4J_CHAT_MEMORY_JSON_"
+                + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
+        try {
+            createTable(jsonTable, MEMORY_ID_COLUMN, CONTENT_COLUMN, ContentColumnType.JSON);
+
+            OracleChatMemoryStore jsonStore = OracleChatMemoryStore.builder()
+                    .dataSource(getDataSource())
+                    .tableName(jsonTable)
+                    .contentColumnType(ContentColumnType.JSON)
+                    .build();
+
+            jsonStore.updateMessages(
+                    "json-user",
+                    Arrays.<ChatMessage>asList(UserMessage.from("Hello JSON"), AiMessage.from("Native JSON works")));
+
+            List<ChatMessage> retrieved = jsonStore.getMessages("json-user");
+            assertThat(retrieved).hasSize(2);
+            assertThat(((UserMessage) retrieved.get(0)).singleText()).isEqualTo("Hello JSON");
+            assertThat(((AiMessage) retrieved.get(1)).text()).isEqualTo("Native JSON works");
+        } finally {
+            dropTableIfExists(jsonTable);
+        }
+    }
+
+    @Test
+    void should_create_native_json_table_when_enabled() throws SQLException {
+        String generatedTable = "LANGCHAIN4J_CHAT_MEMORY_CREATE_JSON_"
+                + Long.toString(Math.abs(System.nanoTime()), 36).toUpperCase(Locale.ROOT);
+        try {
+            dropTableIfExists(generatedTable);
+
+            OracleChatMemoryStore generatedStore = OracleChatMemoryStore.builder()
+                    .dataSource(getDataSource())
+                    .tableName(generatedTable)
+                    .contentColumnType(ContentColumnType.JSON)
+                    .createTable()
+                    .build();
+
+            generatedStore.updateMessages(
+                    "generated-json-user",
+                    Arrays.<ChatMessage>asList(UserMessage.from("Hello JSON"), AiMessage.from("JSON table exists")));
+
+            List<ChatMessage> retrieved = generatedStore.getMessages("generated-json-user");
+            assertThat(retrieved).hasSize(2);
+            assertThat(((UserMessage) retrieved.get(0)).singleText()).isEqualTo("Hello JSON");
+            assertThat(((AiMessage) retrieved.get(1)).text()).isEqualTo("JSON table exists");
+        } finally {
+            dropTableIfExists(generatedTable);
+        }
     }
 
     @Test
@@ -178,11 +258,20 @@ class OracleChatMemoryStoreIT extends OracleContainerTestBase {
 
     private void createTable(String tableName, String memoryIdColumnName, String contentColumnName)
             throws SQLException {
+        createTable(tableName, memoryIdColumnName, contentColumnName, ContentColumnType.CLOB);
+    }
+
+    private void createTable(
+            String tableName,
+            String memoryIdColumnName,
+            String contentColumnName,
+            ContentColumnType contentColumnType)
+            throws SQLException {
         try (Connection connection = getConnection();
                 Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE " + tableName + " ("
                     + memoryIdColumnName + " VARCHAR2(255) PRIMARY KEY, "
-                    + contentColumnName + " CLOB NOT NULL)");
+                    + contentColumnName + " " + contentColumnType + " NOT NULL)");
         }
     }
 

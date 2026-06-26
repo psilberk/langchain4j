@@ -131,6 +131,16 @@ CREATE TABLE chat_memory (
 );
 ```
 
+For Oracle Database versions that support the native `JSON` type, such as 21c and newer, the content
+column can use `JSON` instead:
+
+```sql
+CREATE TABLE chat_memory (
+    memory_id VARCHAR2(255) PRIMARY KEY,
+    content JSON NOT NULL
+);
+```
+
 Use it in chat memory:
 
 ```java
@@ -146,7 +156,30 @@ ChatMemory chatMemory = MessageWindowChatMemory.builder()
    .build();
 ```
 
+Alternatively, let the builder create the table:
+
+```java
+ChatMemoryStore store = OracleChatMemoryStore.builder()
+   .dataSource(myDataSource)
+   .tableName("chat_memory")
+   .createTable()
+   .build();
+```
+
 `OracleChatMemoryStore` stores one row per memory id, with all messages serialized as JSON in the `content` column.
+By default, it keeps the existing `CLOB` storage path for compatibility with Oracle Database 19c and older.
+To use a native `JSON` column, configure the builder:
+
+```java
+ChatMemoryStore store = OracleChatMemoryStore.builder()
+   .dataSource(myDataSource)
+   .tableName("chat_memory")
+   .contentColumnType(OracleChatMemoryStore.ContentColumnType.JSON)
+   .createTable()
+   .build();
+```
+
+When `ContentColumnType.JSON` is selected, messages are serialized and deserialized through Oracle OSON.
 
 ## Running the Test Suite
 By default, integration tests will
