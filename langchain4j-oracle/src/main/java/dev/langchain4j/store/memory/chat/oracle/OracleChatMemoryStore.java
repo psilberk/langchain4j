@@ -4,14 +4,20 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageDeserializer;
 import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.store.memory.chat.ChatMemoryStore;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
+import oracle.jdbc.OracleStatement;
+import oracle.jdbc.OracleType;
+import oracle.jdbc.OracleTypes;
+import oracle.sql.json.OracleJsonDatum;
 
 /**
  * Oracle Database implementation of {@link ChatMemoryStore}.
@@ -27,6 +33,7 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
     private static final Pattern QUOTED_IDENTIFIER = Pattern.compile("^\"([^\"]|\"\")+\"$");
 
     private final DataSource dataSource;
+    private final ContentColumnType contentColumnType;
     private final String selectSql;
     private final String mergeSql;
     private final String deleteSql;
@@ -37,6 +44,8 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
         }
 
         this.dataSource = builder.dataSource;
+        this.contentColumnType =
+                builder.contentColumnType == null ? ContentColumnType.CLOB : builder.contentColumnType;
 
         String tableName =
                 builder.tableName == null ? DEFAULT_TABLE_NAME : validateIdentifier(builder.tableName, "tableName");
@@ -46,6 +55,10 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
         String contentColumnName = builder.contentColumnName == null
                 ? DEFAULT_CONTENT_COLUMN_NAME
                 : validateIdentifier(builder.contentColumnName, "contentColumnName");
+
+        if (builder.createTable) {
+            createTable(tableName, memoryIdColumnName, contentColumnName);
+        }
 
         this.selectSql = "SELECT " + contentColumnName + " FROM " + tableName + " WHERE " + memoryIdColumnName + " = ?";
         this.mergeSql = "MERGE INTO " + tableName + " t "
@@ -70,8 +83,38 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
         throw new IllegalArgumentException(fieldName + " contains unsupported characters: " + identifier);
     }
 
+    private void createTable(String tableName, String memoryIdColumnName, String contentColumnName) {
+        String createTableSql = "CREATE TABLE IF NOT EXISTS " + tableName + " ("
+                + memoryIdColumnName + " VARCHAR2(255) PRIMARY KEY, "
+                + contentColumnName + " " + contentColumnType + " NOT NULL)";
+
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.execute(createTableSql);
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to create chat memory table " + tableName, e);
+        }
+    }
+
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * Database column type used by the content column that stores serialized chat messages.
+     */
+    public enum ContentColumnType {
+        /**
+         * Stores message JSON as text in a {@code CLOB} column. Use this for Oracle Database 19c and older versions
+         * that do not support the native {@code JSON} data type.
+         */
+        CLOB,
+
+        /**
+         * Stores message JSON in a native Oracle {@code JSON} column. Use this for Oracle Database versions that
+         * support the native {@code JSON} data type, such as 21c and newer.
+         */
+        JSON
     }
 
     @Override
@@ -83,10 +126,21 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(selectSql)) {
 
+            if (contentColumnType == ContentColumnType.JSON) {
+                OracleStatement oracleStatement = statement.unwrap(OracleStatement.class);
+                oracleStatement.defineColumnType(1, OracleTypes.JSON);
+                oracleStatement.setLobPrefetchSize(Integer.MAX_VALUE);
+            }
+
             statement.setObject(1, memoryId);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     return Collections.emptyList();
+                }
+
+                if (contentColumnType == ContentColumnType.JSON) {
+                    OracleJsonDatum datum = resultSet.getObject(1, OracleJsonDatum.class);
+                    return OracleJsonChatMessageListMapper.fromOsonBytes(datum.getBytes());
                 }
 
                 String json = resultSet.getString(1);
@@ -96,7 +150,7 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
                 return ChatMessageDeserializer.messagesFromJson(json);
             }
 
-        } catch (SQLException e) {
+        } catch (SQLException | IOException e) {
             throw new RuntimeException("Failed to get messages for memoryId=" + memoryId, e);
         }
     }
@@ -110,16 +164,14 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
             throw new IllegalArgumentException("messages cannot be null");
         }
 
-        String json = ChatMessageSerializer.messagesToJson(messages);
-
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement = connection.prepareStatement(mergeSql)) {
 
             statement.setObject(1, memoryId);
-            statement.setString(2, json);
+            bindMessages(statement, 2, messages);
             statement.executeUpdate();
 
-        } catch (SQLException e) {
+        } catch (SQLException | IOException e) {
             throw new RuntimeException("Failed to update messages for memoryId=" + memoryId, e);
         }
     }
@@ -141,11 +193,23 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
         }
     }
 
+    private void bindMessages(PreparedStatement statement, int parameterIndex, List<ChatMessage> messages)
+            throws SQLException, IOException {
+        if (contentColumnType == ContentColumnType.JSON) {
+            statement.setObject(parameterIndex, OracleJsonChatMessageListMapper.toOsonBytes(messages), OracleType.JSON);
+            return;
+        }
+
+        statement.setString(parameterIndex, ChatMessageSerializer.messagesToJson(messages));
+    }
+
     public static final class Builder {
         private DataSource dataSource;
         private String tableName;
         private String memoryIdColumnName;
         private String contentColumnName;
+        private ContentColumnType contentColumnType;
+        private boolean createTable;
 
         public Builder dataSource(DataSource dataSource) {
             this.dataSource = dataSource;
@@ -164,6 +228,26 @@ public final class OracleChatMemoryStore implements ChatMemoryStore {
 
         public Builder contentColumnName(String contentColumnName) {
             this.contentColumnName = contentColumnName;
+            return this;
+        }
+
+        public Builder contentColumnType(ContentColumnType contentColumnType) {
+            this.contentColumnType = contentColumnType;
+            return this;
+        }
+
+        /**
+         * Enables creation of the chat memory table when the store is built.
+         */
+        public Builder createTable() {
+            return createTable(true);
+        }
+
+        /**
+         * Configures whether the chat memory table should be created when the store is built.
+         */
+        public Builder createTable(boolean createTable) {
+            this.createTable = createTable;
             return this;
         }
 

@@ -12,7 +12,7 @@ import org.testcontainers.utility.MountableFile;
 
 public class OracleContainerTestBase {
     // NB: need to use the regular image as the slim image doesn't include dbms_vector
-    private static final String ORACLE_IMAGE_NAME = "gvenzl/oracle-free:23.6-faststart";
+    private static final String ORACLE_IMAGE_NAME = "gvenzl/oracle-free:23-faststart";
     private static final PoolDataSource DATA_SOURCE = PoolDataSourceFactory.getPoolDataSource();
     private static final PoolDataSource SYSDBA_DATA_SOURCE = PoolDataSourceFactory.getPoolDataSource();
 
